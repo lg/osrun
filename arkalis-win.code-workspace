@@ -3,5 +3,17 @@
 		{
 			"path": "."
 		}
-	]
+	],
+	"settings": {
+		"remote.portsAttributes": {
+			"5950": {
+				"onAutoForward": "ignore",
+				"label": "QEMU VNC"
+			},
+			"qemu-system-x86_64.*:5985": {
+				"onAutoForward": "ignore",
+				"label": "WinRM"
+			}
+		}
+	}
 }

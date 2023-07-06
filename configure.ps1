@@ -2,6 +2,11 @@ $ErrorActionPreference = "Stop"
 
 Start-Transcript -Path "C:\debug.txt" -NoClobber -Append -Force
 
+Write-Output "Disabling Windows Update"
+New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Force | Out-Null
+Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "NoAutoUpdate" -Value 1 -Type DWord -Force
+Set-Service wuauserv -Startup disabled
+
 Write-Output "Installing virtio drivers (starts networking, display driver, etc)"
 & msiexec /qn /i "E:\virtio-win-gt-x64.msi" | Out-Default
 
