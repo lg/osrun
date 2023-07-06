@@ -1,0 +1,45 @@
+{
+  "_comment": "TODO: intentionally does not install network drivers",
+
+  "builders": [
+    {
+      "type": "qemu",
+      "output_directory": "output",
+      "vnc_port_min": 5950,
+      "vnc_port_max": 5950,
+
+      "headless": true,
+      "cpus": 32,
+      "memory": 8192,
+      "machine_type": "q35",
+      "disk_size": "60G",
+      "efi_boot": true,
+      "efi_firmware_code": "./OVMF_CODE.fd",
+      "efi_firmware_vars": "./OVMF_VARS.fd",
+      "boot_wait": "1s",
+      "boot_command": ["<spacebar><wait><spacebar><wait><spacebar><wait><spacebar><wait><spacebar><wait>"],
+      "vga": "virtio",
+      "qemuargs": [
+        ["-cdrom", "virtio-win.iso"],
+        ["-device", "qemu-xhci"],
+        ["-device", "usb-tablet,bus=usb-bus.0"]
+      ],
+
+      "floppy_files": [
+        "autounattend.xml",
+        "configure.ps1",
+        "preboot.ps1"
+      ],
+      "iso_url": "Win11_22H2_English_x64v2.iso",
+      "iso_checksum": "none",
+
+      "communicator": "winrm",
+      "pause_before_connecting": "3m",
+      "winrm_username": "Administrator",
+      "winrm_password": "password",
+      "winrm_use_ssl": "false",
+      "winrm_insecure": "true",
+      "winrm_timeout" : "2h"
+    }
+  ]
+}

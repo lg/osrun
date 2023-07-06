@@ -1,0 +1,37 @@
+things to consider for detection:
+
+- using us english windows iso
+
+after it working:
+
+- disable windows update
+- disable hibernate
+- open ping
+- enable rdp and open port
+- disable uac
+- unlimited password expiration
+
+notes:
+
+- run using `PACKER_LOG=1 packer build -timestamp-ui win11.packer.json`
+- use a vnc client (not macos screen sharing) to connect to 127.0.0.1:5950
+- run `qemu-system-x86_64 -cpu help` to get a list of cpus (and for other commands like accel too)
+- if problems happen during the install, press Shift+F10 and `notepad x:\windows\panther\setuperr.log`
+
+TODO:
+
+- make it so the key doesnt need to be pressed a bunch of times
+- that ProtectYourPC value, a website says 3
+- ["-vga", "virtio"]
+- optimize according to: https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/iot-ent-optimize-images?view=windows-11
+  - Microsoft-Windows-Setup\ImageInstall\OSImage\Compact
+
+
+unattend todo:
+- clean up diskconfiguration and maybe use
+- set fullname and organization in UserData
+- set ComputerName in microsoft-windows-shell-setup
+- set OEMInformation and OEMName in microsoft-windows-shell-setup
+
+- downloading windows: https://github.com/quickemu-project/quickemu/blob/c7e91a0ea064f49223c20538431333340411f2e6/quickget#L2067
+

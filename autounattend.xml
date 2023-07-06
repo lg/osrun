@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  Overview of settings passes: https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/how-configuration-passes-work?view=windows-11
+  Reference of components: https://learn.microsoft.com/en-us/windows-hardware/customize/desktop/unattend/components-b-unattend?view=windows-11
+-->
+
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+  <!-- Windows Setup starts here after booting from the installation media. Install boot-critical drivers here. Also configure partitions and updates. -->
+  <settings pass="windowsPE">
+    <component name="Microsoft-Windows-International-Core-WinPE" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <SetupUILanguage>
+        <UILanguage>en-US</UILanguage>
+      </SetupUILanguage>
+      <InputLocale>en-US</InputLocale>
+      <SystemLocale>en-US</SystemLocale>
+      <UILanguage>en-US</UILanguage>
+      <UILanguageFallback>en-US</UILanguageFallback>
+      <UserLocale>en-US</UserLocale>
+    </component>
+    <component name="Microsoft-Windows-PnpCustomizationsWinPE" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <DriverPaths>
+        <!-- virtio driver needed for storage access -->
+        <PathAndCredentials>
+          <Path>E:\viostor\w11\amd64</Path>
+        </PathAndCredentials>
+      </DriverPaths>
+    </component>
+    <component name="Microsoft-Windows-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <RunSynchronous>
+        <!-- Disable checks since installation isn't compatible on a VM -->
+        <RunSynchronousCommand wcm:action="add">
+          <Order>1</Order>
+          <Path>reg add HKLM\System\Setup\LabConfig /v BypassTPMCheck /t reg_dword /d 0x00000001 /f</Path>
+        </RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add">
+          <Order>2</Order>
+          <Path>reg add HKLM\System\Setup\LabConfig /v BypassSecureBootCheck /t reg_dword /d 0x00000001 /f</Path>
+        </RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add">
+          <Order>3</Order>
+          <Path>reg add HKLM\System\Setup\LabConfig /v BypassRAMCheck /t reg_dword /d 0x00000001 /f</Path>
+        </RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add">
+          <Order>5</Order>
+          <Path>reg add HKLM\System\Setup\LabConfig /v BypassCPUCheck /t reg_dword /d 0x00000001 /f</Path>
+        </RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add">
+          <Order>4</Order>
+          <Path>reg add HKLM\System\Setup\LabConfig /v BypassStorageCheck /t reg_dword /d 0x00000001 /f</Path>
+        </RunSynchronousCommand>
+      </RunSynchronous>
+      <DiskConfiguration>
+        <!-- TODO: Switch to GPT -->
+        <Disk wcm:action="add">
+          <CreatePartitions>
+            <CreatePartition wcm:action="add">
+              <Order>1</Order>
+              <Size>500</Size>
+              <Type>Primary</Type>
+            </CreatePartition>
+            <CreatePartition wcm:action="add">
+              <Order>2</Order>
+              <Size>260</Size>
+              <Type>EFI</Type>
+            </CreatePartition>
+            <CreatePartition wcm:action="add">
+              <Order>3</Order>
+              <Size>128</Size>
+              <Type>MSR</Type>
+            </CreatePartition>
+            <CreatePartition wcm:action="add">
+              <Extend>true</Extend>
+              <Order>4</Order>
+              <Type>Primary</Type>
+            </CreatePartition>
+          </CreatePartitions>
+          <ModifyPartitions>
+            <ModifyPartition wcm:action="add">
+              <Format>NTFS</Format>
+              <Label>WinRE</Label>
+              <Order>1</Order>
+              <PartitionID>1</PartitionID>
+              <TypeID>DE94BBA4-06D1-4D40-A16A-BFD50179D6AC</TypeID>
+            </ModifyPartition>
+            <ModifyPartition wcm:action="add">
+              <Format>FAT32</Format>
+              <Label>System</Label>
+              <Order>2</Order>
+              <PartitionID>2</PartitionID>
+            </ModifyPartition>
+            <ModifyPartition wcm:action="add">
+              <Order>3</Order>
+              <PartitionID>3</PartitionID>
+            </ModifyPartition>
+            <ModifyPartition wcm:action="add">
+              <Format>NTFS</Format>
+              <Label>Windows</Label>
+              <Letter>C</Letter>
+              <Order>4</Order>
+              <PartitionID>4</PartitionID>
+            </ModifyPartition>
+          </ModifyPartitions>
+          <DiskID>0</DiskID>
+          <WillWipeDisk>true</WillWipeDisk>
+        </Disk>
+      </DiskConfiguration>
+      <ImageInstall>
+        <OSImage>
+          <InstallTo>
+            <DiskID>0</DiskID>
+            <PartitionID>4</PartitionID>
+          </InstallTo>
+        </OSImage>
+      </ImageInstall>
+      <UserData>
+        <ProductKey>
+          <Key>VK7JG-NPHTM-C97JM-9MPGT-3V66T</Key>
+        </ProductKey>
+        <AcceptEula>true</AcceptEula>
+      </UserData>
+
+      <!-- We dont want the installer going online for any reason -->
+      <EnableNetwork>false</EnableNetwork>
+    </component>
+  </settings>
+
+  <!-- Still in Windows Setup, copied the Windows image to the boot drive. Install/remove updates/packages/drivers here. Reboots after this. -->
+  <settings pass="offlineServicing" />
+
+  <!-- UNUSED: Used by sysprep to remove all computer-specific things. After reboot, specalize will be called. -->
+  <settings pass="generalize" />
+
+  <!-- First boot of Windows post-Setup. Permissions very wide. Will reboot again at end and login as Administrator. -->
+  <settings pass="specialize">
+    <component name="Microsoft-Windows-Deployment" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
+      xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <RunSynchronous>
+        <RunSynchronousCommand wcm:action="add">
+          <Order>1</Order>
+          <Path>powershell -ExecutionPolicy Bypass -File a:\preboot.ps1</Path>
+          <WillReboot>Never</WillReboot>
+        </RunSynchronousCommand>
+      </RunSynchronous>
+    </component>
+  </settings>
+
+  <!-- ????? System boot, before user login. Create accounts here and install any more drivers necessary. -->
+  <settings pass="auditSystem" />
+
+  <!-- System boot, user login. -->
+  <settings pass="auditUser" />
+
+  <settings pass="oobeSystem">
+    <component name="Microsoft-Windows-International-Core" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <InputLocale>en-US</InputLocale>
+      <SystemLocale>en-US</SystemLocale>
+      <UILanguage>en-US</UILanguage>
+      <UILanguageFallback>en-US</UILanguageFallback>
+      <UserLocale>en-US</UserLocale>
+    </component>
+
+    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <UserAccounts>
+        <AdministratorPassword>
+          <Value>password</Value>
+          <PlainText>true</PlainText>
+        </AdministratorPassword>
+      </UserAccounts>
+      <AutoLogon>
+        <Password>
+          <PlainText>true</PlainText>
+          <Value>password</Value>
+        </Password>
+        <LogonCount>3</LogonCount>
+        <Username>Administrator</Username>
+        <Enabled>true</Enabled>
+      </AutoLogon>
+
+      <ConfigureChatAutoInstall>false</ConfigureChatAutoInstall>
+      <DesktopOptimization>
+        <ShowWindowsStoreAppsOnTaskbar>false</ShowWindowsStoreAppsOnTaskbar>
+      </DesktopOptimization>
+      <OOBE>
+        <HideEULAPage>true</HideEULAPage>
+        <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
+        <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+        <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+        <NetworkLocation>Work</NetworkLocation>
+        <ProtectYourPC>3</ProtectYourPC>
+        <SkipUserOOBE>true</SkipUserOOBE>
+        <SkipMachineOOBE>true</SkipMachineOOBE>
+        <VMModeOptimizations>
+          <SkipWinREInitialization>true</SkipWinREInitialization>
+        </VMModeOptimizations>
+      </OOBE>
+      <Themes>
+        <UWPAppsUseLightTheme>false</UWPAppsUseLightTheme>
+        <SystemUsesLightTheme>false</SystemUsesLightTheme>
+      </Themes>
+
+      <FirstLogonCommands>
+        <SynchronousCommand>
+          <Order>1</Order>
+          <CommandLine>powershell -ExecutionPolicy Bypass -File a:\configure.ps1</CommandLine>
+          <RequiresUserInput>true</RequiresUserInput>
+        </SynchronousCommand>
+      </FirstLogonCommands>
+    </component>
+  </settings>
+</unattend>
