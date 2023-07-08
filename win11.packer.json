@@ -24,7 +24,7 @@
       "floppy_files": [
         "autounattend.xml",
         "configure.ps1",
-        "preboot.ps1"
+        "first-boot.ps1"
       ],
 
       "communicator": "winrm",

@@ -108,7 +108,7 @@
       <RunSynchronous>
         <RunSynchronousCommand wcm:action="add">
           <Order>1</Order>
-          <Path>powershell -ExecutionPolicy Bypass -File a:\preboot.ps1</Path>
+          <Path>powershell -ExecutionPolicy Bypass -File a:\first-boot.ps1</Path>
           <WillReboot>Never</WillReboot>
         </RunSynchronousCommand>
       </RunSynchronous>
