@@ -12,7 +12,7 @@ if (Get-ScheduledTask -TaskName "ConfigureScript" -ErrorAction SilentlyContinue)
     "Microsoft Photos", "MSN Weather", "Windows Camera", "Windows Voice Recorder", "Microsoft Store", "Xbox TCUI",
     "Xbox Game Bar Plugin", "Xbox Game Bar", "Xbox Identity Provider", "Xbox Game Speech Window", "Your Phone",
     "Windows Media Player", "Movies & TV", "Quick Assist", "Mail and Calendar", "Windows Maps", "Store Experience Host",
-    "Windows Calculator", "Power Automate", "Windows Calculator", "Snipping Tool", "Paint", "Windows Web Experience Pack"
+    "Windows Calculator", "Power Automate", "Snipping Tool", "Paint", "Windows Web Experience Pack"
   $software | ForEach-Object { & winget.exe uninstall $_ --accept-source-agreements }
 
   Write-Output "Upgrading the remaining winget packages..."
@@ -62,6 +62,8 @@ Disable-ScheduledTask -TaskName 'StartComponentCleanup' -TaskPath '\Microsoft\Wi
 Write-Output "Disabling disk indexing"
 $obj = Get-WmiObject -Class Win32_Volume -Filter "DriveLetter='C:'"
 $obj | Set-WmiInstance -Arguments @{ IndexingEnabled = $False } | Out-Default
+New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search" -Force | Out-Null
+Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search" -Name "AllowCortana" -Value 0
 
 Write-Output "Disabling NTP time sync"
 & w32tm.exe /config /syncfromflags:NO | Out-Default
@@ -89,13 +91,27 @@ Write-Output "Removing Chat/Teams icon from taskbar"
 New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Chat" -Force | Out-Null
 Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Chat" -Name "ChatIcon" -Value 3
 
+Write-Output "Disabling Widgets"
+New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Dsh" -Force | Out-Null
+Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Dsh" -Name "AllowNewsAndInterests" -Value 0
+
+Write-Output "Disabling Edge Update"
+New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\EdgeUpdate" -Force | Out-Null
+Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\EdgeUpdate" -Name "UpdateDefault" -Value 2
+Set-Service edgeupdate -Startup disabled
+
+Write-Output "Hiding Windows Security notifications"
+New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender Security Center\Notifications" -Force | Out-Null
+Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender Security Center\Notifications" -Name "DisableNotifications" -Value 1
+
 Write-Output "Installing WinGet and NuGet"
 Add-AppxPackage -RegisterByFamilyName -MainPackage Microsoft.DesktopAppInstaller_8wekyb3d8bbwe
 Install-PackageProvider -Name NuGet -Force
 
 Write-Output "Running Windows Update now"
 Install-Module PSWindowsUpdate -Force
-Get-WindowsUpdate -AcceptAll -Install -IgnoreReboot
+Add-WUServiceManager -MicrosoftUpdate -Confirm:$false
+Get-WindowsUpdate -MicrosoftUpdate -AcceptAll -Install -IgnoreReboot
 
 Write-Output "Creating scheduled task to finish up script post-reboot"
 $taskAction = New-ScheduledTaskAction -Execute "Powershell.exe" -Argument "-ExecutionPolicy Bypass -File a:\configure.ps1"

@@ -8,12 +8,12 @@
 
       "headless": true,
       "cpus": 32,
+      "cpu_model": "host",
       "memory": 8192,
       "machine_type": "q35",
       "disk_size": "60G",
       "vga": "virtio",
       "qemuargs": [
-        ["-cpu", "host"],
         ["-cdrom", "virtio-win.iso"],
         ["-device", "qemu-xhci"],
         ["-device", "usb-tablet,bus=usb-bus.0"]
@@ -28,6 +28,7 @@
       ],
 
       "communicator": "winrm",
+      "shutdown_command": "shutdown /s /t 10 /f /d p:4:1 /c \"Packer Shutdown\"",
       "winrm_username": "Administrator",
       "winrm_password": "password",
       "winrm_use_ssl": "false",

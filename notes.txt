@@ -61,8 +61,30 @@ unattend todo:
 
 
 
-orig: 30 minutes
-cpu-host and bios: 20 minutes
-
+bios: 18min 19s
+efi: Xs
 
 KB5027231 is the 2023-06 Cumulative Update for Windows 11 Version 22H2 for x64-Based Systems
+
+
+
+qemu-system-x86_64 \
+  -m 8192M \
+  -smp 32 \
+  -cpu host \
+  -vga virtio \
+  -vnc 127.0.0.1:50 \
+  -device qemu-xhci \
+  -device usb-tablet,bus=usb-bus.0 \
+  -device virtio-net,netdev=user.0 \
+  -drive file=output/packer-qemu,if=virtio,cache=writeback,discard=ignore,format=qcow2 \
+  -netdev user,id=user.0,hostfwd=tcp::4403-:5985 \
+  -name packer-qemu \
+  -machine type=q35,accel=kvm \
+  -boot c
+
+
+# -fda /tmp/packer872549596 \
+# -drive file=/root/arkalis-win/Win11_22H2_English_x64v2.iso,media=cdrom \
+# -boot once=d \
+# -cdrom virtio-win.iso
