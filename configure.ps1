@@ -1,11 +1,12 @@
+# This file is run after on first logon of the administrator account.
+
 $ErrorActionPreference = "Inquire"
 
 # This script is re-run after a reboot, this block handles the post-reboot (and service updated) final steps.
 if (Get-ScheduledTask -TaskName "ConfigureScript" -ErrorAction SilentlyContinue) {
-  Write-Output "Welcome back! Removing scheduled task."
-  Unregister-ScheduledTask -TaskName "ConfigureScript" -Confirm:$false
+  Write-Output "Welcome back!"
 
-  Write-Output "Removing software"
+  Write-Output "Removing software using winget (which should be available)"
   $software = "Clipchamp", "Cortana", "XBox", "Feedback Hub", "Get Help", "Microsoft Tips", "Office", "OneDrive",
     "Microsoft News", "Microsoft Solitaire Collection", "Microsoft Sticky Notes", "Microsoft People", "Microsoft To Do",
     "Microsoft Photos", "MSN Weather", "Windows Camera", "Windows Voice Recorder", "Microsoft Store", "Xbox TCUI",
@@ -14,6 +15,9 @@ if (Get-ScheduledTask -TaskName "ConfigureScript" -ErrorAction SilentlyContinue)
     "Windows Calculator", "Power Automate", "Windows Calculator", "Snipping Tool", "Paint", "Windows Web Experience Pack"
   $software | ForEach-Object { & winget.exe uninstall $_ --accept-source-agreements }
 
+  Write-Output "Upgrading the remaining winget packages..."
+  & winget upgrade --all | Out-Default
+
   Write-Output "Enabling WinRM."
   $connectionProfile = Get-NetConnectionProfile
   Set-NetConnectionProfile -Name $connectionProfile.Name -NetworkCategory Private
@@ -21,8 +25,8 @@ if (Get-ScheduledTask -TaskName "ConfigureScript" -ErrorAction SilentlyContinue)
   winrm set winrm/config/service '@{AllowUnencrypted="true"}'
   winrm set winrm/config/service/auth '@{Basic="true"}'
 
-  Write-Output "All done! Final reboot for good measure"
-
+  Write-Output "All done! Unregistering this script and final reboot for good measure"
+  Unregister-ScheduledTask -TaskName "ConfigureScript" -Confirm:$false
   Restart-Computer -Force
 
   exit
@@ -44,30 +48,8 @@ Get-WmiObject Win32_OSRecoveryConfiguration -EnableAllPrivileges | Set-WmiInstan
 Write-Output "Setting performance mode"
 & powercfg.exe -setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c | Out-Default
 
-Write-Output "Disabling sleep and hibernation"
-& powercfg.exe -change -monitor-timeout-ac 0 | Out-Default
-& powercfg.exe -change -standby-timeout-ac 0 | Out-Default
-& powercfg.exe -change -disk-timeout-ac 0 | Out-Default
-& powercfg.exe -change -hibernate-timeout-ac 0 | Out-Default
-& powercfg.exe /h off | Out-Default
-Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Power" -Name "HiberbootEnabled" -Value 0
-Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Power" -Name "HibernateFileSizePercent" -Value 0
-Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Power" -Name "HibernateEnabled" -Value 0
-
-Write-Output "Disabling System Restore"
-Disable-ComputerRestore -Drive "C:"
-
 Write-Output "Disabling Error Reporting"
 Disable-WindowsErrorReporting
-
-Write-Output "Disabling swap file"
-$computersys = Get-WmiObject Win32_ComputerSystem -EnableAllPrivileges
-$computersys.AutomaticManagedPagefile = $False
-$computersys.Put()
-
-Write-Output "Deleting swap file"
-$pagefile = Get-WmiObject win32_pagefilesetting
-$pagefile.delete()
 
 Write-Output "Disabling scheduled tasks and disk cleanup"
 Disable-ScheduledTask -TaskName 'ScheduledDefrag' -TaskPath '\Microsoft\Windows\Defrag'
@@ -107,9 +89,9 @@ Write-Output "Removing Chat/Teams icon from taskbar"
 New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Chat" -Force | Out-Null
 Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Chat" -Name "ChatIcon" -Value 3
 
-Write-Output "Installing NuGet for Windows Update"
+Write-Output "Installing WinGet and NuGet"
+Add-AppxPackage -RegisterByFamilyName -MainPackage Microsoft.DesktopAppInstaller_8wekyb3d8bbwe
 Install-PackageProvider -Name NuGet -Force
-
 
 Write-Output "Running Windows Update now"
 Install-Module PSWindowsUpdate -Force

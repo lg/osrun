@@ -54,3 +54,15 @@ unattend todo:
           <Order>1</Order>
           <Path>cmd</Path>
         </RunSynchronousCommand> -->
+
+
+
+        qemu-system-x86_64 -m 8192M -cpu host -device qemu-xhci -device usb-tablet,bus=usb-bus.0 -device e1000,netdev=user.0 -machine type=q35,accel=kvm -boot once=d -netdev user,id=user.0,hostfwd=tcp::2844-:5985 -vnc 127.0.0.1:50 -smp 16 -name packer-qemu -drive file=output/packer-qemu,if=virtio,cache=writeback,discard=ignore,format=qcow2
+
+
+
+orig: 30 minutes
+cpu-host and bios: 20 minutes
+
+
+KB5027231 is the 2023-06 Cumulative Update for Windows 11 Version 22H2 for x64-Based Systems

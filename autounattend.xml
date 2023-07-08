@@ -51,54 +51,33 @@
         </RunSynchronousCommand>
       </RunSynchronous>
       <DiskConfiguration>
-        <!-- TODO: Switch to GPT -->
         <Disk wcm:action="add">
           <CreatePartitions>
             <CreatePartition wcm:action="add">
               <Order>1</Order>
-              <Size>500</Size>
+              <Size>100</Size>
               <Type>Primary</Type>
             </CreatePartition>
             <CreatePartition wcm:action="add">
               <Order>2</Order>
-              <Size>260</Size>
-              <Type>EFI</Type>
-            </CreatePartition>
-            <CreatePartition wcm:action="add">
-              <Order>3</Order>
-              <Size>128</Size>
-              <Type>MSR</Type>
-            </CreatePartition>
-            <CreatePartition wcm:action="add">
               <Extend>true</Extend>
-              <Order>4</Order>
               <Type>Primary</Type>
             </CreatePartition>
           </CreatePartitions>
+
           <ModifyPartitions>
             <ModifyPartition wcm:action="add">
+              <Active>true</Active>
+              <Label>Boot</Label>
               <Format>NTFS</Format>
-              <Label>WinRE</Label>
               <Order>1</Order>
               <PartitionID>1</PartitionID>
-              <TypeID>DE94BBA4-06D1-4D40-A16A-BFD50179D6AC</TypeID>
-            </ModifyPartition>
-            <ModifyPartition wcm:action="add">
-              <Format>FAT32</Format>
-              <Label>System</Label>
-              <Order>2</Order>
-              <PartitionID>2</PartitionID>
-            </ModifyPartition>
-            <ModifyPartition wcm:action="add">
-              <Order>3</Order>
-              <PartitionID>3</PartitionID>
             </ModifyPartition>
             <ModifyPartition wcm:action="add">
               <Format>NTFS</Format>
+              <Order>2</Order>
+              <PartitionID>2</PartitionID>
               <Label>Windows</Label>
-              <Letter>C</Letter>
-              <Order>4</Order>
-              <PartitionID>4</PartitionID>
             </ModifyPartition>
           </ModifyPartitions>
           <DiskID>0</DiskID>
@@ -109,7 +88,7 @@
         <OSImage>
           <InstallTo>
             <DiskID>0</DiskID>
-            <PartitionID>4</PartitionID>
+            <PartitionID>2</PartitionID>
           </InstallTo>
         </OSImage>
       </ImageInstall>
@@ -128,7 +107,7 @@
   <!-- Still in Windows Setup, copied the Windows image to the boot drive. Install/remove updates/packages/drivers here. Reboots after this. -->
   <settings pass="offlineServicing" />
 
-  <!-- UNUSED: Used by sysprep to remove all computer-specific things. After reboot, specalize will be called. -->
+  <!-- Used by sysprep to remove all computer-specific things. After reboot, specalize will be called. -->
   <settings pass="generalize" />
 
   <!-- First boot of Windows post-Setup. Permissions very wide. Will reboot again at end and login as Administrator. -->
