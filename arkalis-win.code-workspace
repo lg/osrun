@@ -5,6 +5,12 @@
     }
   ],
   "settings": {
+    "json.schemas": [
+      {
+        "fileMatch": ["**/*.packer.json"],
+        "url": "https://raw.githubusercontent.com/jboero/hashicorp-schemas/master/JSON/packer/1.5/template.json"
+      }
+    ],
     "remote.portsAttributes": {
       "5950": {
         "onAutoForward": "silent",

@@ -35,3 +35,22 @@ unattend todo:
 
 - downloading windows: https://github.com/quickemu-project/quickemu/blob/c7e91a0ea064f49223c20538431333340411f2e6/quickget#L2067
 
+
+
+
+
+
+=================
+
+        <!-- <RunSynchronousCommand wcm:action="add">
+          <Order>1</Order>
+          <Path>icacls "c:\programdata\Microsoft\Windows Defender\*" /remove:g *S-1-5-18 /T /C /L /Q</Path>
+        </RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add">
+          <Order>2</Order>
+          <Path>icacls "c:\windows\system32\sppsvc.exe" /remove:g *S-1-5-18 /T /C /L /Q</Path>
+        </RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add">
+          <Order>1</Order>
+          <Path>cmd</Path>
+        </RunSynchronousCommand> -->

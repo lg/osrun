@@ -1,4 +1,32 @@
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Inquire"
+
+# This script is re-run after a reboot, this block handles the post-reboot (and service updated) final steps.
+if (Get-ScheduledTask -TaskName "ConfigureScript" -ErrorAction SilentlyContinue) {
+  Write-Output "Welcome back! Removing scheduled task."
+  Unregister-ScheduledTask -TaskName "ConfigureScript" -Confirm:$false
+
+  Write-Output "Removing software"
+  $software = "Clipchamp", "Cortana", "XBox", "Feedback Hub", "Get Help", "Microsoft Tips", "Office", "OneDrive",
+    "Microsoft News", "Microsoft Solitaire Collection", "Microsoft Sticky Notes", "Microsoft People", "Microsoft To Do",
+    "Microsoft Photos", "MSN Weather", "Windows Camera", "Windows Voice Recorder", "Microsoft Store", "Xbox TCUI",
+    "Xbox Game Bar Plugin", "Xbox Game Bar", "Xbox Identity Provider", "Xbox Game Speech Window", "Your Phone",
+    "Windows Media Player", "Movies & TV", "Quick Assist", "Mail and Calendar", "Windows Maps", "Store Experience Host",
+    "Windows Calculator", "Power Automate", "Windows Calculator", "Snipping Tool", "Paint", "Windows Web Experience Pack"
+  $software | ForEach-Object { & winget.exe uninstall $_ --accept-source-agreements }
+
+  Write-Output "Enabling WinRM."
+  $connectionProfile = Get-NetConnectionProfile
+  Set-NetConnectionProfile -Name $connectionProfile.Name -NetworkCategory Private
+  winrm quickconfig -quiet
+  winrm set winrm/config/service '@{AllowUnencrypted="true"}'
+  winrm set winrm/config/service/auth '@{Basic="true"}'
+
+  Write-Output "All done! Final reboot for good measure"
+
+  Restart-Computer -Force
+
+  exit
+}
 
 Start-Transcript -Path "C:\debug.txt" -NoClobber -Append -Force
 
@@ -11,69 +39,26 @@ Write-Output "Installing virtio drivers (starts networking, display driver, etc)
 & msiexec /qn /i "E:\virtio-win-gt-x64.msi" | Out-Default
 
 Write-Output "Disabling OS Recovery"
-Get-WmiObject Win32_OSRecoveryConfiguration -EnableAllPrivileges | Set-WmiInstance -Arguments @{ AutoReboot=$False }
+Get-WmiObject Win32_OSRecoveryConfiguration -EnableAllPrivileges | Set-WmiInstance -Arguments @{ AutoReboot = $False }
+
+Write-Output "Setting performance mode"
+& powercfg.exe -setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c | Out-Default
 
 Write-Output "Disabling sleep and hibernation"
-& powercfg -change -monitor-timeout-ac 0 | Out-Default
-& powercfg -change -standby-timeout-ac 0 | Out-Default
-& powercfg -change -disk-timeout-ac 0 | Out-Default
-& powercfg -change -hibernate-timeout-ac 0 | Out-Default
+& powercfg.exe -change -monitor-timeout-ac 0 | Out-Default
+& powercfg.exe -change -standby-timeout-ac 0 | Out-Default
+& powercfg.exe -change -disk-timeout-ac 0 | Out-Default
+& powercfg.exe -change -hibernate-timeout-ac 0 | Out-Default
 & powercfg.exe /h off | Out-Default
 Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Power" -Name "HiberbootEnabled" -Value 0
 Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Power" -Name "HibernateFileSizePercent" -Value 0
 Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Power" -Name "HibernateEnabled" -Value 0
-
-Write-Output "Setting performance mode"
-& powercfg -setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c | Out-Default
 
 Write-Output "Disabling System Restore"
 Disable-ComputerRestore -Drive "C:"
 
 Write-Output "Disabling Error Reporting"
 Disable-WindowsErrorReporting
-
-Write-Output "Disabling scheduled tasks and disk cleanup"
-Disable-ScheduledTask -TaskName 'ScheduledDefrag' -TaskPath '\Microsoft\Windows\Defrag'
-Disable-ScheduledTask -TaskName 'ProactiveScan' -TaskPath '\Microsoft\Windows\Chkdsk'
-Disable-ScheduledTask -TaskName 'Scheduled' -TaskPath '\Microsoft\Windows\Diagnosis'
-Disable-ScheduledTask -TaskName 'SilentCleanup' -TaskPath '\Microsoft\Windows\DiskCleanup'
-Disable-ScheduledTask -TaskName 'WinSAT' -TaskPath '\Microsoft\Windows\Maintenance'
-Disable-ScheduledTask -TaskName 'StartComponentCleanup' -TaskPath '\Microsoft\Windows\Servicing'
-
-Write-Output "Disabling NTP time sync"
-& w32tm.exe /config /syncfromflags:NO | Out-Default
-
-Write-Output "Enabling Explorer performance settings"
-Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\PriorityControl" -Name "Win32PrioritySeparation" -Value 38
-Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" -Name "VisualFXSetting" -Value 2
-
-Write-Output "Giving Explorer sensible defaults"
-$key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
-Set-ItemProperty $key HideFileExt 0
-Set-ItemProperty $key HideDrivesWithNoMedia 0
-Set-ItemProperty $key Hidden 1
-Set-ItemProperty $key AutoCheckSelect 0
-
-Write-Output "Making Explorer not combine taskbar buttons and no tray hiding"
-Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name TaskbarGlomLevel -Value 2
-Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer" -Name EnableAutoTray -Value 0
-
-Write-Output "Adding Run and Admin Tools to Start button"
-Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "Start_ShowRun" -Value 1
-Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "StartMenuAdminTools" -Value 1
-
-read-host “Press ENTER to continue to disable windows defender. Reboot will not enable winrm for now.”
-
-# TODO: Needs anti-tamper first
-Write-Output "Disabling Windows Defender"
-Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender" -Name "DisableAntiSpyware" -Value 1 -Type DWord -Force
-# Set-ItemProperty -Path "HKLM:\Software\Microsoft\Windows Defender\Features" -Name "TamperProtection" -Value 0 -Type DWord -Force
-# Set-MpPreference -DisableRealtimeMonitoring $true
-
-Write-Output "Running Windows Update now"
-Install-PackageProvider -Name NuGet -Force
-Install-Module PSWindowsUpdate -Force
-Get-WindowsUpdate -AcceptAll -Install -IgnoreReboot
 
 Write-Output "Disabling swap file"
 $computersys = Get-WmiObject Win32_ComputerSystem -EnableAllPrivileges
@@ -84,25 +69,62 @@ Write-Output "Deleting swap file"
 $pagefile = Get-WmiObject win32_pagefilesetting
 $pagefile.delete()
 
-Write-Output "Configuring winrm, NOTE: will only start on reboot"
-$profile = Get-NetConnectionProfile
-Set-NetConnectionProfile -Name $profile.Name -NetworkCategory Private
-winrm quickconfig -quiet
-winrm set winrm/config/service '@{AllowUnencrypted="true"}'
-# winrm set winrm/config/service/auth '@{Basic="true"}'
-Stop-Service winrm
+Write-Output "Disabling scheduled tasks and disk cleanup"
+Disable-ScheduledTask -TaskName 'ScheduledDefrag' -TaskPath '\Microsoft\Windows\Defrag'
+Disable-ScheduledTask -TaskName 'ProactiveScan' -TaskPath '\Microsoft\Windows\Chkdsk'
+Disable-ScheduledTask -TaskName 'Scheduled' -TaskPath '\Microsoft\Windows\Diagnosis'
+Disable-ScheduledTask -TaskName 'SilentCleanup' -TaskPath '\Microsoft\Windows\DiskCleanup'
+Disable-ScheduledTask -TaskName 'WinSAT' -TaskPath '\Microsoft\Windows\Maintenance'
+Disable-ScheduledTask -TaskName 'StartComponentCleanup' -TaskPath '\Microsoft\Windows\Servicing'
 
-Write-Output "Done! Rebooting"
+Write-Output "Disabling disk indexing"
+$obj = Get-WmiObject -Class Win32_Volume -Filter "DriveLetter='C:'"
+$obj | Set-WmiInstance -Arguments @{ IndexingEnabled = $False } | Out-Default
 
+Write-Output "Disabling NTP time sync"
+& w32tm.exe /config /syncfromflags:NO | Out-Default
+
+Write-Output "Enabling Explorer performance settings"
+Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\PriorityControl" -Name "Win32PrioritySeparation" -Value 38
+Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" -Name "VisualFXSetting" -Value 2
+
+Write-Output "Giving Explorer sensible folder view defaults"
+Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "HideFileExt" -Value 0
+Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "HideDrivesWithNoMedia" -Value 0
+Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "Hidden" -Value 1
+Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "AutoCheckSelect" -Value 0
+Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "ShowSuperHidden" -Value 1
+
+Write-Output "Making Explorer not combine taskbar buttons and no tray hiding"
+Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name TaskbarGlomLevel -Value 2
+Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer" -Name EnableAutoTray -Value 0
+
+Write-Output "Adding Run and Admin Tools to Start button"
+Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "Start_ShowRun" -Value 1
+Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "StartMenuAdminTools" -Value 1
+
+Write-Output "Removing Chat/Teams icon from taskbar"
+New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Chat" -Force | Out-Null
+Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Chat" -Name "ChatIcon" -Value 3
+
+Write-Output "Installing NuGet for Windows Update"
+Install-PackageProvider -Name NuGet -Force
+
+
+Write-Output "Running Windows Update now"
+Install-Module PSWindowsUpdate -Force
+Get-WindowsUpdate -AcceptAll -Install -IgnoreReboot
+
+Write-Output "Creating scheduled task to finish up script post-reboot"
+$taskAction = New-ScheduledTaskAction -Execute "Powershell.exe" -Argument "-ExecutionPolicy Bypass -File a:\configure.ps1"
+$taskTrigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+$taskPrincipal = New-ScheduledTaskPrincipal -RunLevel Highest -UserID $env:USERNAME
+Register-ScheduledTask -TaskName "ConfigureScript" -Action $taskAction -Trigger $taskTrigger -Principal $taskPrincipal -Force
+
+Write-Output "Done! Rebooting."
 Restart-Computer -Force
 
-# TODO: Disable one drive
-# TODO: Disable windows searchindexing
-# TODO: web threat defense service, windows security health service
-# TODO: disable widgets
-# todo: microsoft windows malicious software removal tool (thats gets installed by windows update, maybe skip it somehow)
 
-# TODO: Disable Windows Defender
-# TODO: Disable Windows Update automatic updates
-# TODO: Disable Paging
-# TODO: Disable Hibernation and remove the file
+
+# TODO: web threat defense service, windows security health service
+# todo: microsoft windows malicious software removal tool (thats gets installed by windows update, maybe skip it somehow)
