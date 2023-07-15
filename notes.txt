@@ -88,3 +88,23 @@ qemu-system-x86_64 \
 # -drive file=/root/arkalis-win/Win11_22H2_English_x64v2.iso,media=cdrom \
 # -boot once=d \
 # -cdrom virtio-win.iso
+
+
+
+
+
+next:
+- do console log
+- make sure everythings deleted
+- autologin
+- add services to right click menu
+- dont require virtio?
+
+
+"qemuargs": [
+        ["-cdrom", "virtio-win.iso"],
+        ["-device", "qemu-xhci"],
+        ["-device", "usb-tablet,bus=usb-bus.0"],
+        ["-device", "pci-serial,chardev=c1"],
+        ["-chardev", "stdio,id=c1,signal=off"]
+      ],

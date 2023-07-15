@@ -28,26 +28,10 @@
     </component>
     <component name="Microsoft-Windows-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
       <RunSynchronous>
-        <!-- Disable checks since installation isn't compatible on a VM -->
+        <!-- Disable checks since installation isn't compatible on a VM. Also on all Commands, note the 159 character limit. -->
         <RunSynchronousCommand wcm:action="add">
           <Order>1</Order>
-          <Path>reg add HKLM\System\Setup\LabConfig /v BypassTPMCheck /t reg_dword /d 0x00000001 /f</Path>
-        </RunSynchronousCommand>
-        <RunSynchronousCommand wcm:action="add">
-          <Order>2</Order>
-          <Path>reg add HKLM\System\Setup\LabConfig /v BypassSecureBootCheck /t reg_dword /d 0x00000001 /f</Path>
-        </RunSynchronousCommand>
-        <RunSynchronousCommand wcm:action="add">
-          <Order>3</Order>
-          <Path>reg add HKLM\System\Setup\LabConfig /v BypassRAMCheck /t reg_dword /d 0x00000001 /f</Path>
-        </RunSynchronousCommand>
-        <RunSynchronousCommand wcm:action="add">
-          <Order>5</Order>
-          <Path>reg add HKLM\System\Setup\LabConfig /v BypassCPUCheck /t reg_dword /d 0x00000001 /f</Path>
-        </RunSynchronousCommand>
-        <RunSynchronousCommand wcm:action="add">
-          <Order>4</Order>
-          <Path>reg add HKLM\System\Setup\LabConfig /v BypassStorageCheck /t reg_dword /d 0x00000001 /f</Path>
+          <Path>cmd /c "for %k in (BypassTPMCheck BypassSecureBootCheck BypassRAMCheck BypassCPUCheck BypassStorageCheck) do (reg add HKLM\System\Setup\LabConfig /v %k /t reg_dword /d 0x00000001 /f )"</Path>
         </RunSynchronousCommand>
       </RunSynchronous>
       <DiskConfiguration>
@@ -102,14 +86,50 @@
 
   <!-- First boot of Windows post-Setup. Permissions very wide. Will reboot again at end and login as Administrator. -->
   <settings pass="specialize">
+    <component name="Microsoft-Windows-TerminalServices-LocalSessionManager" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <fDenyTSConnections>false</fDenyTSConnections>
+    </component>
+    <component name="Networking-MPSSVC-Svc" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <FirewallGroups>
+        <FirewallGroup wcm:action="add" wcm:keyValue="rd1">
+          <Active>true</Active>
+          <Group>Remote Desktop</Group>
+          <Profile>all</Profile>
+        </FirewallGroup>
+      </FirewallGroups>
+    </component>
+    <component name="Microsoft-Windows-TerminalServices-RDP-WinStationExtensions" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <UserAuthentication>0</UserAuthentication>
+    </component>
+
     <component name="Microsoft-Windows-Deployment" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
       xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
       <RunSynchronous>
+        <!-- <RunSynchronousCommand wcm:action="add">
+          <Order>1</Order>
+          <Description>Logging</Description>
+          <Path>cmd /c "echo Disabling Windows Defender + Windows Update and rebooting > COM3"</Path>
+        </RunSynchronousCommand> -->
         <RunSynchronousCommand wcm:action="add">
           <Order>1</Order>
-          <Path>powershell -ExecutionPolicy Bypass -File a:\first-boot.ps1</Path>
-          <WillReboot>Never</WillReboot>
+          <Description>Disable Windows Defender</Description>
+          <Path>powershell -Command "$s = 'Sense','WdBoot','WdFilter','WdNisDrv','WdNisSvc','WinDefend'; $s | ForEach-Object { Set-ItemProperty -Path \"HKLM:\\SYSTEM\\CurrentControlSet\\Services\\$_\" -Name 'Start' -Value 4 -Type DWord -Force }"</Path>
+        </RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add">
+          <Order>2</Order>
+          <Description>Disable Windows Defender Tasks</Description>
+          <Path>powershell -Command "Get-ScheduledTask -TaskPath '\Microsoft\Windows\Windows Defender*' | Disable-ScheduledTask"</Path>
+        </RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add">
+          <Order>3</Order>
+          <Description>Disable Automatic Windows Updates</Description>
+          <Path>powershell -Command "$key = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU' ; New-Item -Path $key -Force | Out-Null ; Set-ItemProperty -Path $key -Name 'NoAutoUpdate' -Value 1 -Type DWord -Force ; Set-Service wuauserv -Startup disabled"</Path>
+        </RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add">
+          <Order>4</Order>
+          <Description>Disable OOBE overlay for first boot</Description>
+          <Path>powershell -Command "Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -Name 'EnableFirstLogonAnimation' -Value 0 -Type DWord -Force"</Path>
         </RunSynchronousCommand>
       </RunSynchronous>
     </component>
@@ -169,7 +189,8 @@
       <FirstLogonCommands>
         <SynchronousCommand>
           <Order>1</Order>
-          <CommandLine>powershell -ExecutionPolicy Bypass -File a:\configure.ps1</CommandLine>
+          <Description>Run script to begin configuration</Description>
+          <CommandLine>powershell -ExecutionPolicy Bypass -File A:\boot-1.ps1</CommandLine>
           <RequiresUserInput>true</RequiresUserInput>
         </SynchronousCommand>
       </FirstLogonCommands>

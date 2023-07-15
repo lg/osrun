@@ -1,4 +1,5 @@
 {
+  "_comment": "3389 RDP, 2222 SSH, 5950 VNC",
   "builders": [
     {
       "type": "qemu",
@@ -11,29 +12,31 @@
       "cpu_model": "host",
       "memory": 8192,
       "machine_type": "q35",
-      "disk_size": "60G",
+      "disk_size": "40G",
       "vga": "virtio",
       "qemuargs": [
         ["-cdrom", "virtio-win.iso"],
         ["-device", "qemu-xhci"],
-        ["-device", "usb-tablet,bus=usb-bus.0"]
+        ["-device", "usb-tablet,bus=usb-bus.0"],
+        ["-netdev", "user,id=user.0,hostfwd=tcp::3389-:3389,hostfwd=tcp::2222-:22"]
       ],
 
       "iso_url": "Win11_22H2_English_x64v2.iso",
       "iso_checksum": "none",
-      "floppy_files": [
-        "autounattend.xml",
-        "configure.ps1",
-        "first-boot.ps1"
-      ],
+      "floppy_files": ["autounattend.xml", "boot-1.ps1", "boot-2.ps1"],
 
-      "communicator": "winrm",
-      "shutdown_command": "shutdown /s /t 10 /f /d p:4:1 /c \"Packer Shutdown\"",
-      "winrm_username": "Administrator",
-      "winrm_password": "password",
-      "winrm_use_ssl": "false",
-      "winrm_insecure": "true",
-      "winrm_timeout" : "2h"
+      "boot_wait": "15m",
+      "ssh_host_port_min": 2222,
+      "ssh_host_port_max": 2222,
+      "shutdown_command": "shutdown /s /t 3 /f /d p:4:1 /c \"Packer Shutdown\"",
+      "ssh_username": "Administrator",
+      "ssh_password": "password",
+      "ssh_timeout" : "1h"
+    }
+  ],
+  "provisioners": [
+    {
+      "type": "breakpoint"
     }
   ]
 }
