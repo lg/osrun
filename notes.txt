@@ -108,3 +108,14 @@ next:
         ["-device", "pci-serial,chardev=c1"],
         ["-chardev", "stdio,id=c1,signal=off"]
       ],
+
+
+      LANG=en-US
+  for file in $(find /tmp/win11 -type f -iname "*.cab" -not -iname "*windows1*-kb*.cab" -not -iname "ssu-*.cab" -not -iname "*desktopdeployment*.cab" -not -iname "*aggregatedmetadata*.cab"); do
+    fileName=$(basename $file .cab)
+    echo "file: $file, fileName: $fileName"
+
+    mkdir -p /tmp/win11/extract
+    cabextract --keep-symlinks --directory /tmp/win11/extract $file
+    wimlib-imagex capture /tmp/win11/extract "/tmp/win11/$fileName.esd" --no-acls --norpfix "Edition Package" "Edition Package"
+  done

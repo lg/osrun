@@ -86,7 +86,7 @@
 
   <!-- First boot of Windows post-Setup. Permissions very wide. Will reboot again at end and login as Administrator. -->
   <settings pass="specialize">
-    <component name="Microsoft-Windows-TerminalServices-LocalSessionManager" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <!-- <component name="Microsoft-Windows-TerminalServices-LocalSessionManager" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
       <fDenyTSConnections>false</fDenyTSConnections>
     </component>
     <component name="Networking-MPSSVC-Svc" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
@@ -100,36 +100,16 @@
     </component>
     <component name="Microsoft-Windows-TerminalServices-RDP-WinStationExtensions" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
       <UserAuthentication>0</UserAuthentication>
-    </component>
+    </component> -->
 
     <component name="Microsoft-Windows-Deployment" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"
       xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State"
       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
       <RunSynchronous>
-        <!-- <RunSynchronousCommand wcm:action="add">
-          <Order>1</Order>
-          <Description>Logging</Description>
-          <Path>cmd /c "echo Disabling Windows Defender + Windows Update and rebooting > COM3"</Path>
-        </RunSynchronousCommand> -->
         <RunSynchronousCommand wcm:action="add">
           <Order>1</Order>
-          <Description>Disable Windows Defender</Description>
-          <Path>powershell -Command "$s = 'Sense','WdBoot','WdFilter','WdNisDrv','WdNisSvc','WinDefend'; $s | ForEach-Object { Set-ItemProperty -Path \"HKLM:\\SYSTEM\\CurrentControlSet\\Services\\$_\" -Name 'Start' -Value 4 -Type DWord -Force }"</Path>
-        </RunSynchronousCommand>
-        <RunSynchronousCommand wcm:action="add">
-          <Order>2</Order>
-          <Description>Disable Windows Defender Tasks</Description>
-          <Path>powershell -Command "Get-ScheduledTask -TaskPath '\Microsoft\Windows\Windows Defender*' | Disable-ScheduledTask"</Path>
-        </RunSynchronousCommand>
-        <RunSynchronousCommand wcm:action="add">
-          <Order>3</Order>
-          <Description>Disable Automatic Windows Updates</Description>
-          <Path>powershell -Command "$key = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU' ; New-Item -Path $key -Force | Out-Null ; Set-ItemProperty -Path $key -Name 'NoAutoUpdate' -Value 1 -Type DWord -Force ; Set-Service wuauserv -Startup disabled"</Path>
-        </RunSynchronousCommand>
-        <RunSynchronousCommand wcm:action="add">
-          <Order>4</Order>
-          <Description>Disable OOBE overlay for first boot</Description>
-          <Path>powershell -Command "Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -Name 'EnableFirstLogonAnimation' -Value 0 -Type DWord -Force"</Path>
+          <Description>Running system provision script</Description>
+          <Path>powershell -ExecutionPolicy Bypass -File A:\boot-0.ps1</Path>
         </RunSynchronousCommand>
       </RunSynchronous>
     </component>
@@ -190,7 +170,7 @@
         <SynchronousCommand>
           <Order>1</Order>
           <Description>Run script to begin configuration</Description>
-          <CommandLine>powershell -ExecutionPolicy Bypass -File A:\boot-1.ps1</CommandLine>
+          <CommandLine>powershell -ExecutionPolicy Bypass -NoExit -File A:\boot-1.ps1</CommandLine>
           <RequiresUserInput>true</RequiresUserInput>
         </SynchronousCommand>
       </FirstLogonCommands>

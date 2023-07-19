@@ -10,9 +10,9 @@
       "headless": true,
       "cpus": 32,
       "cpu_model": "host",
-      "memory": 8192,
+      "memory": 16384,
       "machine_type": "q35",
-      "disk_size": "40G",
+      "disk_size": "30G",
       "vga": "virtio",
       "qemuargs": [
         ["-cdrom", "virtio-win.iso"],
@@ -21,9 +21,11 @@
         ["-netdev", "user,id=user.0,hostfwd=tcp::3389-:3389,hostfwd=tcp::2222-:22"]
       ],
 
-      "iso_url": "Win11_22H2_English_x64v2.iso",
+      "iso_url": "cache/win11-clean.iso",
       "iso_checksum": "none",
-      "floppy_files": ["autounattend.xml", "boot-1.ps1", "boot-2.ps1"],
+
+
+      "floppy_files": ["autounattend.xml", "boot-0.ps1", "boot-1.ps1", "boot-2.ps1", "boot-3.ps1"],
 
       "boot_wait": "15m",
       "ssh_host_port_min": 2222,
@@ -31,7 +33,7 @@
       "shutdown_command": "shutdown /s /t 3 /f /d p:4:1 /c \"Packer Shutdown\"",
       "ssh_username": "Administrator",
       "ssh_password": "password",
-      "ssh_timeout" : "1h"
+      "ssh_timeout" : "10h"
     }
   ],
   "provisioners": [
