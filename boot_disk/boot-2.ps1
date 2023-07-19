@@ -2,6 +2,7 @@
 $ErrorActionPreference = "Inquire"
 Start-Transcript -Append C:\provision.txt
 Write-Output "Starting $PSCommandPath on PowerShell $($PSVersionTable.PSVersion.ToString())"
+Add-Content -Path \\10.0.2.4\qemu\status.txt -Value "Installing OpenSSH and removing last unnecessary windows components" -ErrorAction SilentlyContinue
 
 #####
 
@@ -14,7 +15,7 @@ Enable-NetFirewallRule OpenSSH*
 Write-Output "One last disable of Windows Update, including removing permissions to download more"
 Set-Service wuauserv -StartupType Disabled
 Stop-Service wuauserv -Force
-Start-Process -FilePath "takeown.exe" -ArgumentList "/f c:\Windows\SoftwareDistribution /r /d y /skipsl" -Wait -NoNewWindow | Out-Null
+Start-Process -FilePath "takeown.exe" -ArgumentList "/f c:\Windows\SoftwareDistribution /r /d y /skipsl" -Wait | Out-Null
 Start-Process -FilePath "icacls.exe" -ArgumentList "c:\Windows\SoftwareDistribution /inheritance:r /t /c" -Wait -NoNewWindow | Out-Null
 Start-Process -FilePath "icacls.exe" -ArgumentList "c:\Windows\SoftwareDistribution /remove:g SYSTEM /t /c" -Wait -NoNewWindow | Out-Null
 Remove-Item -Path "C:\Windows\SoftwareDistribution\*" -Recurse -Force | Out-Null
@@ -63,29 +64,9 @@ Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\PasswordLes
 
 
 
-
-
-
-
-
-# New-Item 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU' -Force
-# Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "NoAutoUpdate" -Value 1
-# Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate' -Name TargetReleaseVersion -Value '00000001' -Type DWord -Force
-# Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate' -Name "ProductVersion" -Value 'Windows 10' -Type String -Force
-# Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate' -Name TargetReleaseVersionInfo -Value '22H2' -Type String -Force
-# Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update" -Name "AUOptions" -Value 1
-# Add-Content -Path "C:\Windows\System32\drivers\etc\hosts" -Value "127.0.0.1 fe2cr.update.microsoft.com"
-# Add-Content -Path "C:\Windows\System32\drivers\etc\hosts" -Value "127.0.0.1 windowsupdate.microsoft.com"
-# Add-Content -Path "C:\Windows\System32\drivers\etc\hosts" -Value "127.0.0.1 emdl.ws.microsoft.com"
-# Add-Content -Path "C:\Windows\System32\drivers\etc\hosts" -Value "127.0.0.1 update.microsoft.com"
-# Add-Content -Path "C:\Windows\System32\drivers\etc\hosts" -Value "127.0.0.1 windowsupdate.com"
-# Add-Content -Path "C:\Windows\System32\drivers\etc\hosts" -Value "127.0.0.1 download.windowsupdate.com"
-# Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\DoSvc' -Name Start -Value 4
-
-#####
-
 Write-Output "Rebooting to let things finish up and then running A:\boot-3.ps1"
 Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "boot-3" -Value "powershell -ExecutionPolicy Bypass -File A:\boot-3.ps1"
+Add-Content -Path \\10.0.2.4\qemu\status.txt -Value "Final reboot now [ACTION NEEDED TO TYPE IN PASSWORD]" -ErrorAction SilentlyContinue
 Restart-Computer -Force
 
 ###############

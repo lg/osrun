@@ -31,6 +31,10 @@
         <!-- Disable checks since installation isn't compatible on a VM. Also on all Commands, note the 159 character limit. -->
         <RunSynchronousCommand wcm:action="add">
           <Order>1</Order>
+          <Path>cmd /c "echo Copying installation files to hard drive >> \\10.0.2.4\qemu\status.txt"</Path>
+        </RunSynchronousCommand>
+        <RunSynchronousCommand wcm:action="add">
+          <Order>2</Order>
           <Path>cmd /c "for %k in (BypassTPMCheck BypassSecureBootCheck BypassRAMCheck BypassCPUCheck BypassStorageCheck) do (reg add HKLM\System\Setup\LabConfig /v %k /t reg_dword /d 0x00000001 /f )"</Path>
         </RunSynchronousCommand>
       </RunSynchronous>
@@ -72,9 +76,7 @@
         </ProductKey>
         <AcceptEula>true</AcceptEula>
       </UserData>
-
-      <!-- We dont want the installer going online for any reason -->
-      <EnableNetwork>false</EnableNetwork>
+      <EnableNetwork>true</EnableNetwork>
     </component>
   </settings>
 

@@ -15,10 +15,6 @@
       "5950": {
         "onAutoForward": "silent",
         "label": "QEMU VNC"
-      },
-      "qemu-system-x86_64.*:5985": {
-        "onAutoForward": "silent",
-        "label": "WinRM"
       }
     }
   }

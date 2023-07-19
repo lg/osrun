@@ -3,6 +3,7 @@
 $ErrorActionPreference = "Inquire"
 Start-Transcript -Append C:\provision.txt
 Write-Output "Starting $PSCommandPath on PowerShell $($PSVersionTable.PSVersion.ToString())"
+Add-Content -Path \\10.0.2.4\qemu\status.txt -Value "First boot, disabling services and scheduled tasks" -ErrorAction SilentlyContinue
 
 #####
 
@@ -44,4 +45,4 @@ Get-ScheduledTask -TaskPath '\Microsoft\Windows\Windows Defender*' | Disable-Sch
 Get-ScheduledTask -TaskPath '\Microsoft\Windows\WindowsUpdate*' | Disable-ScheduledTask
 
 Write-Output "Rebooting and will contiunue into A:\boot-1.ps1 with Administrator user"
-Sleep 5
+Add-Content -Path \\10.0.2.4\qemu\status.txt -Value "Rebooting to create Administrator and start OOBE" -ErrorAction SilentlyContinue

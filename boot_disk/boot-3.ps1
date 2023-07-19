@@ -1,6 +1,7 @@
 $ErrorActionPreference = "Inquire"
 Start-Transcript -Append C:\provision.txt
 Write-Output "Starting $PSCommandPath on PowerShell $($PSVersionTable.PSVersion.ToString())"
+Add-Content -Path \\10.0.2.4\qemu\status.txt -Value "Clearing final files and starting OpenSSH" -ErrorAction SilentlyContinue
 
 ###
 
@@ -39,6 +40,7 @@ Set-Service sshd -StartupType Automatic
 Start-Service sshd
 
 Write-Output "Have a wonderful day!"
+Add-Content -Path \\10.0.2.4\qemu\status.txt -Value "Completed!" -ErrorAction SilentlyContinue
 Read-Host -Prompt "Press ENTER to exit"
 
 

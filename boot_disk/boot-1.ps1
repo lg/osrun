@@ -2,6 +2,7 @@
 $ErrorActionPreference = "Inquire"
 Start-Transcript -Append C:\provision.txt
 Write-Output "Starting $PSCommandPath on PowerShell $($PSVersionTable.PSVersion.ToString())"
+Add-Content -Path \\10.0.2.4\qemu\status.txt -Value "Installing drivers, other settings and running Windows Update (this will take several minutes)" -ErrorAction SilentlyContinue
 
 #####
 
@@ -135,4 +136,5 @@ Remove-Item "C:\rcv.zip"
 Write-Output "Rebooting to apply Windows Updates and continue with A:\boot-2.ps1"
 New-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Force | Out-Null
 Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "boot-2" -Value "powershell -ExecutionPolicy Bypass -File A:\boot-2.ps1"
+Add-Content -Path \\10.0.2.4\qemu\status.txt -Value "Rebooting to apply Windows Updates" -ErrorAction SilentlyContinue
 Restart-Computer -Force
