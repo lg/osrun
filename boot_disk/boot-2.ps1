@@ -1,10 +1,4 @@
 # boot-2: This script is run after Windows Updates are applied.
-$ErrorActionPreference = "Inquire"
-Start-Transcript -Append C:\provision.txt
-Write-Output "Starting $PSCommandPath on PowerShell $($PSVersionTable.PSVersion.ToString())"
-Add-Content -Path \\10.0.2.4\qemu\status.txt -Value "Installing OpenSSH and removing last unnecessary windows components" -ErrorAction SilentlyContinue
-
-#####
 
 Write-Output "Installing OpenSSH (while Windows Update is still usable)"
 Set-Service wuauserv -StartupType Automatic
@@ -22,51 +16,46 @@ Remove-Item -Path "C:\Windows\SoftwareDistribution\*" -Recurse -Force | Out-Null
 
 #####
 
-Write-Output "Removing Windows Capabilities"
-$CapabilitiesToRemove = @("App.StepsRecorder", "Hello.Face.*", "Language.Handwriting", "Language.OCR", "Language.Speech",
-  "Language.TextToSpeech", "Media.WindowsMediaPlayer", "Microsoft.Wallpapers.Extended", "Microsoft.Windows.Ethernet.Client*",
-  "Microsoft.Windows.Wifi*", "Microsoft.Windows.WordPad", "OneCoreUAP.OneSync", "Print.Management.Console", "MathRecognizer")
-Get-WindowsCapability -Online |
-  Where-Object State -EQ "Installed" |
-  Where-Object Name -Match ($CapabilitiesToRemove -join "|") |
-  Remove-WindowsCapability -Online
+Write-Output "Final cleanup of disk space"
+Dism.exe /online /Cleanup-Image /StartComponentCleanup /ResetBase
 
-Write-Output "Removing Windows Optional Features"
-$WindowsOptionalFeatures = @("SearchEngine-Client-Package", "Printing-Foundation-Features", "Printing-Foundation-InternetPrinting-Client", "WorkFolders-Client")
-Get-WindowsOptionalFeature -Online |
-  Where-Object State -EQ "Enabled" |
-  Where-Object FeatureName -Match ($WindowsOptionalFeatures -join "|") |
-  Disable-WindowsOptionalFeature -Online -Remove -NoRestart
+Write-Output "Clearing all remaining temp files and caches"
+Remove-Item -Path "C:\Windows\Temp\*" -Recurse -Force
+Remove-Item -Path "C:\Users\Administrator\AppData\Local\Temp\*" -Recurse -Force
+Remove-Item -Path "C:\Users\Administrator\AppData\Local\Microsoft\Windows\INetCache\*" -Recurse -Force
+Remove-Item -Path "C:\Windows\SoftwareDistribution\*" -Recurse -Force -ErrorAction Ignore
 
-Write-Output "Removing delivery optimization files"
-Delete-DeliveryOptimizationCache -Force
+###
 
-Write-Output "Uninstalling OneDrive"
-Start-Process -FilePath "taskkill.exe" -ArgumentList "/f /im OneDrive.exe" -Wait -NoNewWindow
-Start-Process -FilePath "C:\Windows\system32\OneDriveSetup.exe" -ArgumentList "/uninstall" -Wait -NoNewWindow
+Write-Output "Snapshot 0s"
+& C:\RegistryChangesView.exe /CreateSnapshot c:\reg0
 
-Write-Output "Setting up autologin for Administrator"
-$RegPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
-Set-ItemProperty $RegPath "AutoAdminLogon" -Value "1" -Type String
-Set-ItemProperty $RegPath "DefaultUserName" -Value "Administrator" -Type String
-Set-ItemProperty $RegPath "DefaultPassword" -Value "password" -Type String
-Set-ItemProperty $RegPath "IsConnectedAutoLogon" -Value 0 -Type DWord
-New-Item "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\PasswordLess\Device" -Force
-Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\PasswordLess\Device" "DevicePasswordLessBuildVersion" -Value 0
+Sleep 30
+Write-Output "Snapshot 30s"
+& C:\RegistryChangesView.exe /CreateSnapshot c:\reg30
 
+Sleep 120
+Write-Output "Snapshot 2m"
+& C:\RegistryChangesView.exe /CreateSnapshot c:\reg120
 
+Sleep 300
+Write-Output "Snapshot 7m"
+& C:\RegistryChangesView.exe /CreateSnapshot c:\reg300
 
-# Write-Output "Locking out the OS from overriding we want AutoAdminLogon"
-# $key = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
-# $acl = Get-Acl $key ; $acl.SetAccessRuleProtection($true, $true) ; Set-Acl $key $acl
-# $acl = Get-Acl $key ; $acl.RemoveAccessRuleAll((New-Object System.Security.AccessControl.RegistryAccessRule("NT AUTHORITY\SYSTEM", "FullControl", "Allow"))) ; Set-Acl $key $acl
+#####
 
+# Read-Host -Prompt "Done! Press Enter to enable OpenSSH and autologin and exit"
 
+Write-Output "Schedule OpenSSH to start on boot"
+Set-Service sshd -StartupType Automatic
 
+Write-Output "Successfully provisioned image."
+Stop-Computer -Force
+
+#####
 
 Write-Output "Rebooting to let things finish up and then running A:\boot-3.ps1"
-Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "boot-3" -Value "powershell -ExecutionPolicy Bypass -File A:\boot-3.ps1"
-Add-Content -Path \\10.0.2.4\qemu\status.txt -Value "Final reboot now [ACTION NEEDED TO TYPE IN PASSWORD]" -ErrorAction SilentlyContinue
+Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "boot-3" -Value "powershell `"powershell -NoLogo -ExecutionPolicy Bypass -NoExit -File A:\boot-3.ps1 2>&1 | tee \\10.0.2.4\qemu\status.txt`""
 Restart-Computer -Force
 
 ###############

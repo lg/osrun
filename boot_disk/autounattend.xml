@@ -111,7 +111,7 @@
         <RunSynchronousCommand wcm:action="add">
           <Order>1</Order>
           <Description>Running system provision script</Description>
-          <Path>powershell -ExecutionPolicy Bypass -File A:\boot-0.ps1</Path>
+          <Path>powershell "powershell -NoLogo -ExecutionPolicy Bypass -File A:\boot-0.ps1 2>&amp;1 | tee \\10.0.2.4\qemu\status.txt"</Path>
         </RunSynchronousCommand>
       </RunSynchronous>
     </component>
@@ -132,14 +132,14 @@
     <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
       <UserAccounts>
         <AdministratorPassword>
-          <Value>password</Value>
+          <Value></Value>
           <PlainText>true</PlainText>
         </AdministratorPassword>
       </UserAccounts>
       <AutoLogon>
         <Password>
           <PlainText>true</PlainText>
-          <Value>password</Value>
+          <Value></Value>
         </Password>
         <LogonCount>3</LogonCount>
         <Username>Administrator</Username>
@@ -172,7 +172,7 @@
         <SynchronousCommand>
           <Order>1</Order>
           <Description>Run script to begin configuration</Description>
-          <CommandLine>powershell -ExecutionPolicy Bypass -NoExit -File A:\boot-1.ps1</CommandLine>
+          <CommandLine>powershell "powershell -NoLogo -ExecutionPolicy Bypass -File A:\boot-1.ps1 2>&amp;1 | tee \\10.0.2.4\qemu\status.txt"</CommandLine>
           <RequiresUserInput>true</RequiresUserInput>
         </SynchronousCommand>
       </FirstLogonCommands>

@@ -12,6 +12,7 @@ EXPOSE 5950
 ENV UUPDUMP_URL="http://uupdump.net/get.php?id=3a34d712-ee6f-46fa-991a-e7d9520c16fc&pack=en-us&edition=professional&aria2=2"
 ENV UUPDUMP_CONVERT_SCRIPT_URL="https://github.com/uup-dump/converter/raw/073071a0003a755233c2fa74c7b6173cd7075ed7/convert.sh"
 
-RUN apk add --no-cache qemu-system-x86_64 qemu-hw-display-virtio-vga
+RUN apk add --no-cache qemu-system-x86_64 qemu-hw-display-virtio-vga qemu-img mtools samba \
+  aria2 wimlib cabextract bash chntpw cdrkit
 COPY run.sh /usr/local/bin/run.sh
 ENTRYPOINT ["/usr/local/bin/run.sh"]
