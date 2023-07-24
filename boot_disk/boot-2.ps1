@@ -13,7 +13,6 @@ Stop-Service wuauserv -Force
 & takeown.exe /f c:\Windows\SoftwareDistribution /r /d y /skipsl | Out-Null
 & icacls.exe "c:\Windows\SoftwareDistribution" /inheritance:r /t /c *>&1 | Out-Null
 & icacls.exe "c:\Windows\SoftwareDistribution" /remove:g SYSTEM /t /c *>&1 | Out-Null
-# Remove-Item -Path "C:\Windows\SoftwareDistribution\*" -Recurse -Force | Out-Null
 
 #####
 
@@ -21,7 +20,6 @@ Write-Output "Clearing all remaining temp files and caches"
 Remove-Item -Path "C:\Windows\Temp\*" -Recurse -Force *>&1 | Out-Null
 Remove-Item -Path "C:\Users\Administrator\AppData\Local\Temp\*" -Recurse -Force *>&1 | Out-Null
 Remove-Item -Path "C:\Users\Administrator\AppData\Local\Microsoft\Windows\INetCache\*" -Recurse -Force *>&1 | Out-Null
-# Remove-Item -Path "C:\ProgramData\Microsoft\Search\Data\Applications\Windows\*" -Recurse -Force -ErrorAction SilentlyContinue
 
 Write-Output "Removing unused windows components"
 & Dism.exe /online /Cleanup-Image /StartComponentCleanup /ResetBase | Out-Null
@@ -34,14 +32,11 @@ Write-Output "Compressing drive"
 
 #####
 
-Write-Output "Snapshot 0s"
+Write-Output "Snapshotting registry now and in 60s"
 Start-Process -FilePath "C:\RegistryChangesView.exe" -ArgumentList "/CreateSnapshot c:\reg0" -Wait | Out-Null
-
-#Write-Output "Done"
-#Read-Host -Prompt "Done! Press Enter to exit"
-Write-Output "Successfully provisioned image."
-
-Stop-Computer -Force
+Sleep 60
+Start-Process -FilePath "C:\RegistryChangesView.exe" -ArgumentList "/CreateSnapshot c:\reg60" -Wait | Out-Null
+Write-Output "Successfully provisioned image. Staying idle."
 
 # TODO:
 # - something still broken with C:\Windows\SoftwareDistribution

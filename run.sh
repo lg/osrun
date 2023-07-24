@@ -4,7 +4,7 @@ set -o errexit
 
 start_qemu() {
   CPU_COUNT=${CPU_COUNT:-$(grep -c ^processor /proc/cpuinfo)}
-  MEMORY_GB=${MEMORY_GB:-16}
+  MEMORY_GB=${MEMORY_GB:-8}
 
   qemu-system-x86_64 \
     -name arkalis-win \
@@ -31,7 +31,8 @@ start_qemu() {
     -monitor tcp:0.0.0.0:55556,server=on,wait=off \
     -device virtio-serial \
     -chardev socket,port=44444,host=0.0.0.0,server=on,wait=off,id=qga0 \
-    -device virtserialport,chardev=qga0,name=org.qemu.guest_agent.0
+    -device virtserialport,chardev=qga0,name=org.qemu.guest_agent.0 \
+    &
 }
 
 # Build the Windows image
@@ -67,7 +68,7 @@ if [ ! -f /cache/win.qcow2 ]; then
   fi
 
   echo -e "\033[32;32;1mCreating disk image\033[0m"
-  qemu-img create -f qcow2 -o compression_type=zstd -q /cache/win.qcow2 30G
+  qemu-img create -f qcow2 -o compression_type=zstd -q /cache/win.qcow2 20G
 
   if [ ! -e /dev/kvm ]; then
     echo -e "\033[31;49mKVM acceleration not found. Ensure you're using --device=/dev/kvm with docker.\033[0m"
@@ -86,12 +87,13 @@ if [ ! -f /cache/win.qcow2 ]; then
   echo -e "\033[32;49m(Logs redirected here -- VNC 5950, QEMU Monitor 55556, QEMU Agent 44444, ex: \"socat tcp:127.0.0.1:55556 readline\")\033[0m"
   start_qemu
 
-  while ! tail -f /tmp/qemu-status/status.txt | grep -q "Successfully provisioned image."; do sleep 1; done
+  while ! grep -q "Successfully provisioned image." /tmp/qemu-status/status.txt; do sleep 1; done
+  echo "savevm provisioned" | socat tcp:127.0.0.1:44444 -
 
   echo -e "\033[32;49;1mWindows installation complete\033[0m"
 fi
 
-# ,hv_relaxed=on,hv_spinlocks=0x1fff,hv_vapic=on,hv_time=on,hv_vpindex=on,hv_synic=on,hv_stimer=on,hv_tlbflush=on,hv_reset=on,hv_xmm_input=on
+#
 ####### where i left off
 # 1. just added a bunch of the hv_params
 # 2. boot-2 isnt lauching on boot (well it is, but it closes immediately
