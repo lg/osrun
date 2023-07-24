@@ -1,20 +1,35 @@
 # boot-1: This script is run as Administrator as OOBE.
 
-Write-Output "Running Windows Update"
+# Write-Output "Running Windows Update"
 Set-Service wuauserv -StartupType Manual
 Start-Service wuauserv
-Install-PackageProvider -Name NuGet -Force
-Install-Module PSWindowsUpdate -Force
-Get-WindowsUpdate -AcceptAll -Install -IgnoreReboot -Verbose | Out-Null
+Write-Output "Installing all virtio drivers and agent and then rebooting with Administrator user"
+& msiexec.exe /qn /i "E:\virtio-win-gt-x64.msi" | Out-Null
+& "E:\virtio-win-guest-tools.exe" /install /quiet /norestart | Out-Null
 Set-Service wuauserv -StartupType Disabled
-Stop-Service wuauserv -Force
+Stop-Service wuauserv -Force *>&1 | Select-String -NotMatch -Pattern "Waiting for service" | Out-Null
+
+# Write-Output "Installing all virtio drivers and agent"
+# & msiexec.exe /qn /i "E:\virtio-win-gt-x64.msi" | Out-Null
+# Write-Output "Installing all virtio drivers and agent 2"
+# & "E:\virtio-win-guest-tools.exe" /install /quiet /norestart | Out-Null
+# Write-Output "Installing all virtio drivers and agent 3"
+
+# Write-Output "Running Windows Update"
+# Set-Service wuauserv -StartupType Manual
+# Start-Service wuauserv
+# Install-PackageProvider -Name NuGet -Force | Out-Null
+# Install-Module PSWindowsUpdate -Force | Out-Null
+# Get-WindowsUpdate -AcceptAll -Install -IgnoreReboot -Verbose | Out-Null
+# Set-Service wuauserv -StartupType Disabled
+# Stop-Service wuauserv -Force
 
 Write-Output "Removing delivery optimization files"
-Delete-DeliveryOptimizationCache -Force
+Delete-DeliveryOptimizationCache -Force | Out-Null
 
-Write-Output "Uninstalling OneDrive"
-Start-Process -FilePath "taskkill.exe" -ArgumentList "/f /im OneDrive.exe" -Wait -NoNewWindow
-Start-Process -FilePath "C:\Windows\system32\OneDriveSetup.exe" -ArgumentList "/uninstall" -Wait -NoNewWindow
+Write-Output "Disabling Content Delivery Manager"
+New-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" -Force | Out-Null
+Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" -Name "SilentInstalledAppsEnabled" -Value 0
 
 Write-Output "Enabling Explorer performance settings"
 Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\PriorityControl" -Name "Win32PrioritySeparation" -Value 38
@@ -38,9 +53,15 @@ Write-Output "Adding Run and Admin Tools to Start button"
 Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "Start_ShowRun" -Value 1
 Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "StartMenuAdminTools" -Value 1
 
+Write-Output "Waiting for OneDrive to be running"
+while (!(Get-Process -Name "OneDrive" -ErrorAction SilentlyContinue)) { Start-Sleep -Seconds 1 }
+Write-Output "Killing and uninstalling OneDrive"
+Start-Process -FilePath "taskkill.exe" -ArgumentList "/f /im OneDrive.exe" -Wait -NoNewWindow | Out-Null
+Start-Process -FilePath "C:\Windows\system32\OneDriveSetup.exe" -ArgumentList "/uninstall" -Wait -NoNewWindow
+
 #####
 
-Write-Output "Rebooting to apply Windows Updates and continue with A:\boot-2.ps1"
+Write-Output "Rebooting to A:\boot-2.ps1"
 New-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Force | Out-Null
 Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "boot-2" -Value "powershell `"powershell -NoLogo -ExecutionPolicy Bypass -NoExit -File A:\boot-2.ps1 2>&1 | tee \\10.0.2.4\qemu\status.txt`""
 Restart-Computer -Force

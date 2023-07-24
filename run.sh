@@ -1,5 +1,38 @@
 #!/bin/ash
+#shellcheck shell=dash disable=SC3036,SC3048
 set -o errexit
+
+start_qemu() {
+  CPU_COUNT=${CPU_COUNT:-$(grep -c ^processor /proc/cpuinfo)}
+  MEMORY_GB=${MEMORY_GB:-16}
+
+  qemu-system-x86_64 \
+    -name arkalis-win \
+    \
+    -machine type=q35,accel=kvm \
+    -rtc clock=host,base=localtime \
+    -cpu host \
+    -smp "$CPU_COUNT" \
+    -m "${MEMORY_GB}G" \
+    -device virtio-balloon \
+    -vga virtio \
+    -device e1000,netdev=user.0 \
+    -netdev user,id=user.0,smb=/tmp/qemu-status \
+    \
+    -drive file=/cache/boot_disk.img,if=floppy,format=raw \
+    -drive file=/cache/win.qcow2,media=disk,cache=unsafe,if=virtio,format=qcow2,discard=unmap \
+    -drive file=/cache/win11.iso,media=cdrom \
+    -drive file=/cache/virtio-win.iso,media=cdrom \
+    -boot once=d \
+    \
+    -device qemu-xhci \
+    -device usb-tablet,bus=usb-bus.0 \
+    -vnc 0.0.0.0:50 \
+    -monitor tcp:0.0.0.0:55556,server=on,wait=off \
+    -device virtio-serial \
+    -chardev socket,port=44444,host=0.0.0.0,server=on,wait=off,id=qga0 \
+    -device virtserialport,chardev=qga0,name=org.qemu.guest_agent.0
+}
 
 # Build the Windows image
 if [ ! -f /cache/win.qcow2 ]; then
@@ -33,20 +66,15 @@ if [ ! -f /cache/win.qcow2 ]; then
     mv /*PROFESSIONAL_X64_EN-US.ISO /cache/win11.iso
   fi
 
-  rm -f /cache/win-building.qcow2
-
   echo -e "\033[32;32;1mCreating disk image\033[0m"
-  qemu-img create -f qcow2 -o compression_type=zstd -q /cache/win-building.qcow2 30G
+  qemu-img create -f qcow2 -o compression_type=zstd -q /cache/win.qcow2 30G
 
   if [ ! -e /dev/kvm ]; then
     echo -e "\033[31;49mKVM acceleration not found. Ensure you're using --device=/dev/kvm with docker.\033[0m"
     exit 1
   fi
 
-  echo -e "\033[32;32;1mStarting qemu for installation\033[0m"
-  echo -e "\033[32;49m(Logs redirected here, watch using VNC on port 5950)\033[0m"
-
-  trap 'echo -e "\033[31;49mTerminating\033[0m" ; rm -f /cache/win-building.qcow2' SIGINT SIGTERM
+  trap 'echo -e "\033[31;49mTerminating\033[0m" ; rm -f /cache/win.qcow2 ; exit 1' SIGINT SIGTERM
 
   # Set up direct logging with the console here. Use in Windows with: `echo hello >> \\10.0.2.4\qemu\status.txt`. Note
   # that you might need to run `wpeinit` if you're in the Windows installer.
@@ -54,37 +82,13 @@ if [ ! -f /cache/win.qcow2 ]; then
   touch /tmp/qemu-status/status.txt
   tail -f /tmp/qemu-status/status.txt &
 
-  CPU_COUNT=${CPU_COUNT:-$(grep -c ^processor /proc/cpuinfo)}
-  MEMORY_GB=${MEMORY_GB:-16}
-  qemu-system-x86_64 \
-    -name arkalis-win \
-    \
-    -machine type=q35,accel=kvm \
-    -rtc clock=host,base=localtime \
-    -cpu host \
-    -smp $CPU_COUNT \
-    -m ${MEMORY_GB}G \
-    -device virtio-balloon \
-    -vga virtio \
-    -device e1000,netdev=user.0 \
-    -netdev user,id=user.0,hostfwd=tcp::3389-:3389,hostfwd=tcp::2222-:22,smb=/tmp/qemu-status \
-    -device qemu-xhci \
-    -device usb-tablet,bus=usb-bus.0 \
-    \
-    -drive file=/cache/boot_disk.img,if=floppy,format=raw \
-    -drive file=/cache/win-building.qcow2,media=disk,cache=unsafe,if=virtio,format=qcow2 \
-    -drive file=/cache/win11.iso,media=cdrom \
-    -drive file=/cache/virtio-win.iso,media=cdrom \
-    -boot once=d \
-    \
-    -vnc 0.0.0.0:50
-  if [ ! tail -f /tmp/qemu-status/status.txt | grep -q "Windows installation complete" ]; then
-    echo -e "\033[31;49;1mWindows installation failed\033[0m"
-    exit 1
-  fi
+  echo -e "\033[32;32;1mStarting qemu for installation\033[0m"
+  echo -e "\033[32;49m(Logs redirected here -- VNC 5950, QEMU Monitor 55556, QEMU Agent 44444, ex: \"socat tcp:127.0.0.1:55556 readline\")\033[0m"
+  start_qemu
+
+  while ! tail -f /tmp/qemu-status/status.txt | grep -q "Successfully provisioned image."; do sleep 1; done
 
   echo -e "\033[32;49;1mWindows installation complete\033[0m"
-  mv /cache/win-building.qcow2 /cache/win.qcow2
 fi
 
 # ,hv_relaxed=on,hv_spinlocks=0x1fff,hv_vapic=on,hv_time=on,hv_vpindex=on,hv_synic=on,hv_stimer=on,hv_tlbflush=on,hv_reset=on,hv_xmm_input=on
@@ -93,26 +97,3 @@ fi
 # 2. boot-2 isnt lauching on boot (well it is, but it closes immediately
 
 echo -e "\033[32;49;1mDone!\033[0m"
-
-# -net user,smb=/tmp/qemu-status \
-# -net nic,model=e1000 \
-
-
-#-nic 'user,id=n1,guestfwd=tcp:10.0.2.100:1234-cmd:cat > /tmp/out' \
-#
-#-device virtio-net,netdev=user.0 \
-# # Run
-# qemu-system-x86_64 \
-#   -vnc 127.0.0.1:50 \
-#   -netdev user,id=user.0,hostfwd=tcp::3389-:3389,hostfwd=tcp::2222-:22 \
-#   -cpu host \
-#   -machine type=q35,accel=kvm \
-#   -m 8192M \
-#   -smp 32 \
-#   -vga virtio \
-#   -name packer-qemu \
-#   -device qemu-xhci \
-#   -device usb-tablet,bus=usb-bus.0 \
-#   -device virtio-net,netdev=user.0 \
-#   -drive file=output/packer-qemu,if=virtio,cache=writeback,discard=ignore,format=qcow2
-

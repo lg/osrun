@@ -15,29 +15,37 @@ foreach ($service in $serviceName) {
 }
 
 Write-Output "Disabling Windows Defender tasks"
-Get-ScheduledTask -TaskPath '\Microsoft\Windows\Windows Defender*' | Disable-ScheduledTask
+Get-ScheduledTask -TaskPath '\Microsoft\Windows\Windows Defender*' | Disable-ScheduledTask | Out-Null
 
 Write-Output "Disabling OOBE overlay for first Administrator login"
 Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -Name 'EnableFirstLogonAnimation' -Value 0 -Type DWord -Force
 
 Write-Output "Disabling scheduled tasks and disk cleanup"
-Disable-ScheduledTask -TaskName 'ScheduledDefrag' -TaskPath '\Microsoft\Windows\Defrag'
-Disable-ScheduledTask -TaskName 'ProactiveScan' -TaskPath '\Microsoft\Windows\Chkdsk'
-Disable-ScheduledTask -TaskName 'Scheduled' -TaskPath '\Microsoft\Windows\Diagnosis'
-Disable-ScheduledTask -TaskName 'SilentCleanup' -TaskPath '\Microsoft\Windows\DiskCleanup'
-Disable-ScheduledTask -TaskName 'WinSAT' -TaskPath '\Microsoft\Windows\Maintenance'
-Disable-ScheduledTask -TaskName 'StartComponentCleanup' -TaskPath '\Microsoft\Windows\Servicing'
+Disable-ScheduledTask -TaskName 'ScheduledDefrag' -TaskPath '\Microsoft\Windows\Defrag' | Out-Null
+Disable-ScheduledTask -TaskName 'ProactiveScan' -TaskPath '\Microsoft\Windows\Chkdsk' | Out-Null
+Disable-ScheduledTask -TaskName 'Scheduled' -TaskPath '\Microsoft\Windows\Diagnosis' | Out-Null
+Disable-ScheduledTask -TaskName 'SilentCleanup' -TaskPath '\Microsoft\Windows\DiskCleanup' | Out-Null
+Disable-ScheduledTask -TaskName 'WinSAT' -TaskPath '\Microsoft\Windows\Maintenance' | Out-Null
+Disable-ScheduledTask -TaskName 'StartComponentCleanup' -TaskPath '\Microsoft\Windows\Servicing' | Out-Null
 
 Write-Output "Disabling other scheduled tasks used for security"
-Get-ScheduledTask -TaskPath '\Microsoft\Windows\Data Integrity Scan*' | Disable-ScheduledTask
-Get-ScheduledTask -TaskPath '\Microsoft\Windows\Diagnosis*' | Disable-ScheduledTask
-Get-ScheduledTask -TaskPath '\Microsoft\Windows\SoftwareProtectionPlatform*' | Disable-ScheduledTask
-Get-ScheduledTask -TaskPath '\Microsoft\Windows\UpdateOrchestrator*' | Disable-ScheduledTask
-Get-ScheduledTask -TaskPath '\Microsoft\Windows\WaaSMedic*' | Disable-ScheduledTask
-Get-ScheduledTask -TaskPath '\Microsoft\Windows\Windows Defender*' | Disable-ScheduledTask
-Get-ScheduledTask -TaskPath '\Microsoft\Windows\WindowsUpdate*' | Disable-ScheduledTask
+Get-ScheduledTask -TaskPath '\Microsoft\Windows\Data Integrity Scan*' | Disable-ScheduledTask | Out-Null
+Get-ScheduledTask -TaskPath '\Microsoft\Windows\Diagnosis*' | Disable-ScheduledTask | Out-Null
+Get-ScheduledTask -TaskPath '\Microsoft\Windows\SoftwareProtectionPlatform*' | Disable-ScheduledTask | Out-Null
+Get-ScheduledTask -TaskPath '\Microsoft\Windows\UpdateOrchestrator*' | Disable-ScheduledTask | Out-Null
+Get-ScheduledTask -TaskPath '\Microsoft\Windows\WaaSMedic*' | Disable-ScheduledTask | Out-Null
+Get-ScheduledTask -TaskPath '\Microsoft\Windows\Windows Defender*' | Disable-ScheduledTask | Out-Null
+Get-ScheduledTask -TaskPath '\Microsoft\Windows\WindowsUpdate*' | Disable-ScheduledTask | Out-Null
 
 ###
+
+Write-Output "Disabling other scheduled tasks"
+Disable-ScheduledTask -TaskName 'MicrosoftEdgeUpdateTaskMachineUA' -TaskPath '\' | Out-Null
+Get-ScheduledTask -TaskPath '\Microsoft\Windows\Customer Experience Improvement Program*' | Disable-ScheduledTask | Out-Null
+Get-ScheduledTask -TaskPath '\Microsoft\Windows\Flighting*' | Disable-ScheduledTask | Out-Null
+Get-ScheduledTask -TaskPath '\Microsoft\Windows\Windows Error Reporting*' | Disable-ScheduledTask | Out-Null
+Get-ScheduledTask -TaskPath '\Microsoft\Windows\InstallService*' | Disable-ScheduledTask | Out-Null
+Get-ScheduledTask -TaskName "*OneDrive*" | Disable-ScheduledTask | Out-Null
 
 Write-Output "Disabling System Restore"
 Disable-ComputerRestore -Drive "C:"
@@ -46,17 +54,17 @@ Write-Output "Removing Recovery Environment"
 Start-Process -FilePath "reagentc.exe" -ArgumentList "/disable" -Wait
 
 Write-Output "Disabling OS Recovery"
-Get-WmiObject Win32_OSRecoveryConfiguration -EnableAllPrivileges | Set-WmiInstance -Arguments @{ AutoReboot = $False }
+Get-WmiObject Win32_OSRecoveryConfiguration -EnableAllPrivileges | Set-WmiInstance -Arguments @{ AutoReboot = $False } | Out-Null
 
 Write-Output "Disabling Error Reporting"
-Disable-WindowsErrorReporting
+Disable-WindowsErrorReporting | Out-Null
 
 Write-Output "Disabling and deleting page file"
 $computersys = Get-WmiObject Win32_ComputerSystem -EnableAllPrivileges
 $computersys.AutomaticManagedPagefile = $False
-$computersys.Put()
+$computersys.Put() | Out-Null
 $pagefile = Get-WmiObject win32_pagefilesetting
-$pagefile.delete()
+$pagefile.delete() | Out-Null
 
 Write-Output "Disabling disk indexing"
 $obj = Get-WmiObject -Class Win32_Volume -Filter "DriveLetter='C:'"
@@ -67,7 +75,6 @@ Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search
 Write-Output "Disabling Windows Search"
 Set-Service WSearch -StartupType Disabled
 Stop-Service -Name WSearch
-# Remove-Item -Path "C:\ProgramData\Microsoft\Search\Data\Applications\Windows\*" -Recurse -Force
 
 Write-Output "Setting performance mode"
 Start-Process -FilePath "powercfg.exe" -ArgumentList "-setactive", "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c" -Wait
@@ -114,12 +121,16 @@ Write-Output "Removing Chat/Teams icon from taskbar"
 New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Chat" -Force | Out-Null
 Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Chat" -Name "ChatIcon" -Value 3
 
+Write-Output "Disabling Content Delivery Manager"
+New-Item -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" -Force | Out-Null
+Set-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" -Name "SilentInstalledAppsEnabled" -Value 0
+
 Write-Output "Downloading and extracting SpaceMonger"
 Invoke-WebRequest -Uri "https://archive.org/download/spcmn140_zip/spcmn140.zip" -OutFile "C:\sm.zip"
 Expand-Archive -Path "C:\sm.zip" -DestinationPath "C:\" -Force
 Remove-Item "C:\sm.zip"
 
-Write-Output "Downloading and extracting RegistryChangesView..."
+Write-Output "Downloading and extracting RegistryChangesView"
 Invoke-WebRequest -Uri "https://www.nirsoft.net/utils/registrychangesview-x64.zip" -OutFile "C:\rcv.zip"
 Expand-Archive -Path "C:\rcv.zip" -DestinationPath "C:\" -Force
 Remove-Item "C:\rcv.zip"
@@ -133,26 +144,26 @@ $CapabilitiesToRemove = @("App.StepsRecorder", "Hello.Face.*", "Language.Handwri
 Get-WindowsCapability -Online |
   Where-Object State -EQ "Installed" |
   Where-Object Name -Match ($CapabilitiesToRemove -join "|") |
-  Remove-WindowsCapability -Online
+  Remove-WindowsCapability -Online |
+  Out-Null
 
 Write-Output "Removing Windows Optional Features"
-$WindowsOptionalFeatures = @("SearchEngine-Client-Package", "Printing-Foundation-Features", "Printing-Foundation-InternetPrinting-Client", "WorkFolders-Client")
+$WindowsOptionalFeatures = @("SearchEngine-Client-Package", "Printing-Foundation-Features",
+  "Printing-Foundation-InternetPrinting-Client", "WorkFolders-Client")
 Get-WindowsOptionalFeature -Online |
   Where-Object State -EQ "Enabled" |
   Where-Object FeatureName -Match ($WindowsOptionalFeatures -join "|") |
-  Disable-WindowsOptionalFeature -Online -Remove -NoRestart
+  Disable-WindowsOptionalFeature -Online -Remove -NoRestart *>&1 |
+  Select-String -NotMatch -Pattern "Restart is suppressed" |
+  Out-Null
 
-Write-Output "Setting up autologin for Administrator"
+Write-Output "Setting up autologin for Administrator user in the future"
 $RegPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
 Set-ItemProperty $RegPath "AutoAdminLogon" -Value "1" -Type String
 Set-ItemProperty $RegPath "DefaultUserName" -Value "Administrator" -Type String
 Set-ItemProperty $RegPath "DefaultPassword" -Value "" -Type String
 Set-ItemProperty $RegPath "IsConnectedAutoLogon" -Value 0 -Type DWord
-New-Item "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\PasswordLess\Device" -Force
-Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\PasswordLess\Device" "DevicePasswordLessBuildVersion" -Value 0
+New-Item "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\PasswordLess\Device" -Force | Out-Null
+Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\PasswordLess\Device" "DevicePasswordLessBuildVersion" -Value 0 | Out-Null
 
-Write-Output "Installing all virtio drivers and agent"
-Start-Process -FilePath "msiexec.exe" -ArgumentList "/qn", "/i", "E:\virtio-win-gt-x64.msi" -Wait
-Start-Process -FilePath "e:\virtio-win-guest-tools.exe" -ArgumentList "/install", "/quiet", "/norestart" -Wait
-
-Write-Output "Rebooting and will contiunue into A:\boot-1.ps1 with Administrator user"
+Write-Output "Rebooting and will continue into A:\boot-1.ps1 with Administrator user"
