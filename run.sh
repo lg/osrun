@@ -68,7 +68,7 @@ if [ ! -f /cache/win.qcow2 ]; then
   fi
 
   echo -e "\033[32;32;1mCreating disk image\033[0m"
-  qemu-img create -f qcow2 -o compression_type=zstd -q /cache/win.qcow2 20G
+  qemu-img create -f qcow2 -o compression_type=zstd -q /cache/win.qcow2 15G
 
   if [ ! -e /dev/kvm ]; then
     echo -e "\033[31;49mKVM acceleration not found. Ensure you're using --device=/dev/kvm with docker.\033[0m"
@@ -88,14 +88,8 @@ if [ ! -f /cache/win.qcow2 ]; then
   start_qemu
 
   while ! grep -q "Successfully provisioned image." /tmp/qemu-status/status.txt; do sleep 1; done
-  echo "savevm provisioned" | socat tcp:127.0.0.1:44444 -
+  echo -e "savevm provisioned\nq" | socat tcp:127.0.0.1:44444 -
 
   echo -e "\033[32;49;1mWindows installation complete\033[0m"
 fi
 
-#
-####### where i left off
-# 1. just added a bunch of the hv_params
-# 2. boot-2 isnt lauching on boot (well it is, but it closes immediately
-
-echo -e "\033[32;49;1mDone!\033[0m"
