@@ -1,4 +1,5 @@
 # boot-0: This script is run as the SYSTEM user on the first boot post-installer. System will reboot automatically on completion.
+$ErrorActionPreference = "Inquire"
 
 Write-Output "Disabling system access to Windows Defender, Windows Update and Edge Updater"
 $serviceName = @(
@@ -166,4 +167,4 @@ Set-ItemProperty $RegPath "IsConnectedAutoLogon" -Value 0 -Type DWord
 New-Item "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\PasswordLess\Device" -Force | Out-Null
 Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\PasswordLess\Device" "DevicePasswordLessBuildVersion" -Value 0 | Out-Null
 
-Write-Output "Rebooting and will continue into A:\boot-1.ps1 with Administrator user"
+Write-Output "Rebooting and will continue into D:\boot-1.ps1 with Administrator user"

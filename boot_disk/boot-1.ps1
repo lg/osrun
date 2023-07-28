@@ -1,4 +1,5 @@
 # boot-1: This script is run as Administrator as OOBE.
+$ErrorActionPreference = "Inquire"
 
 Write-Output "Waiting for OneDrive to be running"
 while (!(Get-Process -Name "OneDrive" -ErrorAction SilentlyContinue)) { Start-Sleep -Seconds 1 }
@@ -7,8 +8,8 @@ Start-Process -FilePath "taskkill.exe" -ArgumentList "/f /im OneDrive.exe" -Wait
 Start-Process -FilePath "C:\Windows\system32\OneDriveSetup.exe" -ArgumentList "/uninstall" -Wait -NoNewWindow
 
 Write-Output "Installing all virtio drivers and agent and then rebooting with Administrator user"
-& msiexec.exe /qn /i "E:\virtio-win-gt-x64.msi" | Out-Null
-& "E:\virtio-win-guest-tools.exe" /install /quiet /norestart | Out-Null
+& msiexec.exe /qn /i "D:\virtio\virtio-win-gt-x64.msi" | Out-Null
+& "D:\virtio\virtio-win-guest-tools.exe" /install /quiet /norestart | Out-Null
 
 # Write-Output "Running Windows Update"
 # Set-Service wuauserv -StartupType Manual
@@ -50,7 +51,7 @@ Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer
 
 #####
 
-Write-Output "Rebooting to A:\boot-2.ps1"
+Write-Output "Rebooting to D:\boot-2.ps1"
 New-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Force | Out-Null
-Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "boot-2" -Value "cmd /c `"powershell -NoLogo -ExecutionPolicy Bypass -NoExit -File A:\boot-2.ps1 2>&1 >> \\10.0.2.4\qemu\status.txt`""
+Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce" -Name "boot-2" -Value "cmd /c `"powershell -NoLogo -ExecutionPolicy Bypass -NoExit -File D:\boot-2.ps1 2>&1 >> \\10.0.2.4\qemu\status.txt`""
 Restart-Computer -Force

@@ -22,7 +22,7 @@
       <DriverPaths>
         <!-- virtio driver needed for storage access -->
         <PathAndCredentials>
-          <Path>E:\viostor\w11\amd64</Path>
+          <Path>D:\virtio\viostor\w11\amd64</Path>
         </PathAndCredentials>
       </DriverPaths>
     </component>
@@ -111,7 +111,7 @@
         <RunSynchronousCommand wcm:action="add">
           <Order>1</Order>
           <Description>Running system provision script</Description>
-          <Path>cmd /c "powershell -NoLogo -ExecutionPolicy Bypass -File A:\boot-0.ps1 2>&amp;1 >> \\10.0.2.4\qemu\status.txt"</Path>
+          <Path>cmd /c "powershell -NoLogo -ExecutionPolicy Bypass -File D:\boot-0.ps1 2>&amp;1 >> \\10.0.2.4\qemu\status.txt"</Path>
         </RunSynchronousCommand>
       </RunSynchronous>
     </component>
@@ -172,7 +172,7 @@
         <SynchronousCommand>
           <Order>1</Order>
           <Description>Run script to begin configuration</Description>
-          <CommandLine>cmd /c "powershell -NoLogo -ExecutionPolicy Bypass -File A:\boot-1.ps1 2>&amp;1 >> \\10.0.2.4\qemu\status.txt"</CommandLine>
+          <CommandLine>cmd /c "powershell -NoLogo -ExecutionPolicy Bypass -File D:\boot-1.ps1 2>&amp;1 >> \\10.0.2.4\qemu\status.txt"</CommandLine>
           <RequiresUserInput>true</RequiresUserInput>
         </SynchronousCommand>
       </FirstLogonCommands>

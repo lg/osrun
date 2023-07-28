@@ -1,4 +1,5 @@
 # boot-2: This script is run after Windows Updates are applied.
+$ErrorActionPreference = "Inquire"
 
 # Write-Output "Installing OpenSSH (while Windows Update is still usable)"
 # Set-Service wuauserv -StartupType Automatic
@@ -34,9 +35,9 @@ Write-Output "Compressing drive"
 
 Write-Output "Snapshotting registry now and in 60s"
 Start-Process -FilePath "C:\RegistryChangesView.exe" -ArgumentList "/CreateSnapshot c:\reg0" -Wait | Out-Null
-Sleep 60
-Start-Process -FilePath "C:\RegistryChangesView.exe" -ArgumentList "/CreateSnapshot c:\reg60" -Wait | Out-Null
-Write-Output "Successfully provisioned image. Staying idle."
+Write-Output "Successfully provisioned image."
+
+Stop-Computer -Force
 
 # TODO:
 # - something still broken with C:\Windows\SoftwareDistribution
