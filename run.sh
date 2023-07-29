@@ -1,35 +1,35 @@
 #!/bin/ash
-#shellcheck shell=dash disable=SC3036,SC3048,SC2046
+#shellcheck shell=dash disable=SC3036,SC3048
 set -o errexit
 
 mkdir -p /tmp/qemu-status
 
 start_qemu() {
-  CPU_COUNT=${CPU_COUNT:-$(grep -c ^processor /proc/cpuinfo)}
-  MEMORY_GB=${MEMORY_GB:-8}
   qemu-system-x86_64 \
     -name arkalis-win \
     \
     -machine type=q35,accel=kvm \
     -rtc clock=host,base=localtime \
     -cpu host \
-    -smp "$CPU_COUNT" \
-    -m "${MEMORY_GB}G" \
+    -smp "${CPU_COUNT:-$(grep -c ^processor /proc/cpuinfo)}" \
+    -m "${MEMORY_GB:-8}G" \
     -device virtio-balloon \
     -vga virtio \
     -device e1000,netdev=user.0 \
     -netdev user,id=user.0,smb=/tmp/qemu-status \
     \
     -drive file=/cache/win.qcow2,media=disk,cache=unsafe,if=virtio,format=qcow2,discard=unmap \
-    $([ "$1" -eq 1 ] && echo "-drive file=/cache/newwin11.iso,media=cdrom -boot once=d") \
+    $1 \
     \
     -device qemu-xhci \
     -device usb-tablet,bus=usb-bus.0 \
-    -vnc 0.0.0.0:50 \
-    -monitor tcp:0.0.0.0:55556,server=on,wait=off \
+    \
     -device virtio-serial \
     -chardev socket,websocket=on,host=0.0.0.0,port=44444,server=on,wait=off,id=qga0 \
     -device virtserialport,chardev=qga0,name=org.qemu.guest_agent.0 \
+    \
+    -vnc 0.0.0.0:50 \
+    -monitor tcp:0.0.0.0:55556,server=on,wait=off \
     &
 }
 
@@ -86,7 +86,7 @@ if [ ! -f /cache/win.qcow2 ]; then
 
   echo -e "\033[32;32;1mStarting qemu for installation\033[0m"
   echo -e "\033[32;49m(Logs redirected here -- VNC 5950, QEMU Monitor 55556, QEMU Agent 44444, ex: \"socat tcp:127.0.0.1:55556 readline\")\033[0m"
-  start_qemu 1
+  start_qemu "-drive file=/cache/newwin11.iso,media=cdrom -boot once=d"
   wait "$!"
   if ! grep -q "Successfully provisioned image." /tmp/qemu-status/status.txt; then
     echo -e "\033[31;49mFailed to install Windows successfully, aborting\033[0m"
@@ -94,8 +94,8 @@ if [ ! -f /cache/win.qcow2 ]; then
   fi
 
   echo -e "\033[32;32;1mInitial provisioning completed, restarting to create snapshot\033[0m"
-  date
-  start_qemu 0
+  MEMORY_GB=4
+  start_qemu
   QEMU_PID="$!"
 
   echo -e "\033[32;49mWaiting for QEMU agent\033[0m"
@@ -108,11 +108,13 @@ if [ ! -f /cache/win.qcow2 ]; then
 
   echo -e "\033[32;49;1mWindows installation complete\033[0m"
   trap - SIGINT SIGTERM
-  exit 0
 fi
 
-# echo "here"
-# start_qemu 0
+echo -e "\033[32;49;1mLoading Windows snapshot\033[0m"
+MEMORY_GB=4
+start_qemu "-loadvm provisioned"
+echo '{"execute": "guest-set-time"}' | while ! websocat -b -n -1 ws://127.0.0.1:44444/; do sleep 1; done
+
 # echo "started and waiting"
 # while ! [ -e /tmp/qemu-status/done.txt ]; do sleep 1; done
 echo "done"
