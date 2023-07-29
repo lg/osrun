@@ -1,4 +1,4 @@
-# boot-1: This script is run as Administrator as OOBE.
+# boot-1: This script is run as Administrator during OOBE. Put everything that can only be run after the user is created.
 $ErrorActionPreference = "Inquire"
 
 Write-Output "Waiting for OneDrive to be running"

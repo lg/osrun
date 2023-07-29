@@ -1,12 +1,5 @@
-# boot-2: This script is run after Windows Updates are applied.
+# boot-2: This script is run on first reboot after first login of Administrator, do final cleanup here before snapshot boot.
 $ErrorActionPreference = "Inquire"
-
-# Write-Output "Installing OpenSSH (while Windows Update is still usable)"
-# Set-Service wuauserv -StartupType Automatic
-# Start-Service wuauserv
-# Add-WindowsCapability -Online -Name OpenSSH.Server | Out-Null
-# Enable-NetFirewallRule OpenSSH*
-# Set-Service sshd -StartupType Automatic
 
 Write-Output "One last disable of Windows Update, including removing permissions to download more"
 Set-Service wuauserv -StartupType Disabled

@@ -2,8 +2,16 @@
 #shellcheck shell=dash disable=SC3036,SC3048
 set -o errexit
 
+while getopts 'c:' OPTION; do case "$OPTION" in
+  c) RUN_COMMAND="$OPTARG" ;;
+  *) exit 1 ;;
+esac; done
+
 [ ! -e /dev/kvm ] && echo -e "\033[33;49;1mKVM acceleration not found. Ensure you're using --device=/dev/kvm with docker.\033[0m"
 
+# Windows 11 from May 2023, go to https://uupdump.net and get the link to the latest Retail Windows 11
+UUPDUMP_URL="http://uupdump.net/get.php?id=3a34d712-ee6f-46fa-991a-e7d9520c16fc&pack=en-us&edition=professional&aria2=2"
+UUPDUMP_CONVERT_SCRIPT_URL="https://github.com/uup-dump/converter/raw/073071a0003a755233c2fa74c7b6173cd7075ed7/convert.sh"
 VIRTIO_URL="https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/stable-virtio/virtio-win.iso"
 INSTALL_MEMORY_GB=8
 RUN_MEMORY_GB=4
@@ -11,12 +19,13 @@ RUN_MEMORY_GB=4
 mkdir -p /tmp/qemu-status
 
 start_qemu() {
-  while getopts 'm:o:h' OPTION; do case "$OPTION" in
+  while getopts 'm:o:' OPTION; do case "$OPTION" in
     m) MEMORY_GB="$OPTARG" ;;
     o) QEMU_OPTS="$OPTARG" ;;
     *) exit 1 ;;
   esac; done
   qemu-system-x86_64 \
+    -deamonize \
     -name arkalis-win \
     \
     -machine type=q35,accel=kvm \
@@ -40,8 +49,7 @@ start_qemu() {
     -device virtserialport,chardev=qga0,name=org.qemu.guest_agent.0 \
     \
     -vnc 0.0.0.0:50 \
-    -monitor tcp:0.0.0.0:55556,server=on,wait=off \
-    &
+    -monitor tcp:0.0.0.0:55556,server=on,wait=off
 }
 
 if [ ! -e /cache/win.qcow2 ]; then
@@ -84,34 +92,40 @@ if [ ! -e /cache/win.qcow2 ]; then
   touch /tmp/qemu-status/status.txt
   tail -f /tmp/qemu-status/status.txt &
 
-  start_qemu "-drive file=/cache/win11-prepared.iso,media=cdrom -boot once=d"
+  start_qemu -m $INSTALL_MEMORY_GB -o "-drive file=/cache/win11-prepared.iso,media=cdrom -boot once=d"
   wait "$!"
   if ! grep -q "Successfully provisioned image." /tmp/qemu-status/status.txt; then
     echo -e "\033[31;49mFailed to install Windows successfully, aborting\033[0m"
     kill -INT $$
   fi
 
-  echo -e "\033[32;32;1mCreating VM snapshot\033[0m"
-  start_qemu -m 4
+  echo -e "\033[32;32mCreating VM snapshot\033[0m"
+  start_qemu -m $RUN_MEMORY_GB
   QEMU_PID="$!"
-
-  echo -e "\033[32;49mWaiting for QEMU agent\033[0m"
   echo '{"execute": "guest-get-osinfo"}' | while ! websocat -b -n -1 ws://127.0.0.1:44444/; do sleep 1; done
-  echo -e "\033[32;49mSleeping 10 seconds\033[0m"
   sleep 10
-  echo -e "\033[32;49mCreating snapshot and waiting for QEMU to exit\033[0m"
   echo -e "savevm provisioned\nq" | nc 127.0.0.1 55556
   wait "$QEMU_PID"
 
-  echo -e "\033[32;49;1mWindows installation complete\033[0m"
+  echo -e "\033[32;49mWindows installation complete\033[0m"
   trap - SIGINT SIGTERM
+  rm -f /cache/win11-clean.iso /cache/win11-prepared.iso
 fi
 
-echo -e "\033[32;49;1mLoading Windows snapshot\033[0m"
-MEMORY_GB=4
-start_qemu "-loadvm provisioned"
-echo '{"execute": "guest-set-time"}' | while ! websocat -b -n -1 ws://127.0.0.1:44444/; do sleep 1; done
+echo -e "\033[32;49;1mRunning \`$RUN_COMMAND\`\033[0m"
+start_qemu -m $RUN_MEMORY_GB -o "-loadvm provisioned"
 
-# echo "started and waiting"
-# while ! [ -e /tmp/qemu-status/done.txt ]; do sleep 1; done
-echo "done"
+PROCESS_PID=$(echo "{\"execute\": \"guest-exec\", \"args\": {\"path\": \"cmd\", \"arg\": [\"/c\", \"$RUN_COMMAND\"]}}" \
+  | while ! websocat -b -n -1 ws://127.0.0.1:44444/; do sleep 1; done \
+  | jq -r '.pid')
+
+EXITED="false"
+while [ "$EXITED" != "true" ]; do
+  sleep 1
+  EXEC_STATUS=$(echo "{\"execute\": \"guest-exec-status\", \"args\": {\"pid\": $PROCESS_PID\"}}" \
+    | websocat -b -n -1 ws://127.0.0.1:44444/)
+  EXITED=$(echo "$EXEC_STATUS" | jq -r '.exited')
+  EXIT_CODE=$(echo "$EXEC_STATUS" | jq -r '.exitcode')
+done
+
+exit "$EXIT_CODE"

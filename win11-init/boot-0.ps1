@@ -167,4 +167,4 @@ Set-ItemProperty $RegPath "IsConnectedAutoLogon" -Value 0 -Type DWord
 New-Item "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\PasswordLess\Device" -Force | Out-Null
 Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\PasswordLess\Device" "DevicePasswordLessBuildVersion" -Value 0 | Out-Null
 
-Write-Output "Rebooting and will continue into D:\boot-1.ps1 with Administrator user"
+Write-Output "Rebooting and will continue into D:\boot-1.ps1 with Administrator user as per autounattend.xml"
