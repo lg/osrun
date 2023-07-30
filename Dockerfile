@@ -5,7 +5,8 @@
 
 FROM --platform=linux/amd64 alpine:3.18
 
-RUN apk add --no-cache qemu-system-x86_64 qemu-hw-display-virtio-vga qemu-img samba socat websocat 7zip jq \
+RUN apk add --no-cache qemu-system-x86_64 qemu-hw-display-virtio-vga qemu-img samba socat websocat 7zip jq coreutils \
+  inotify-tools \
   aria2 wimlib cabextract bash chntpw cdrkit
 COPY run.sh /run.sh
 COPY win11-init /win11-init

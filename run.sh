@@ -2,11 +2,7 @@
 #shellcheck shell=dash disable=SC3036,SC3048
 set -o errexit
 
-while getopts '' OPTION; do case "$OPTION" in
-  *) exit 1 ;;
-esac; done
-shift $((OPTIND - 1))
-RUN_COMMAND="${*:-echo hello}"
+RUN_COMMAND=$*
 
 [ ! -e /dev/kvm ] && echo -e "\033[33;49;1mKVM acceleration not found. Ensure you're using --device=/dev/kvm with docker.\033[0m"
 
@@ -59,7 +55,7 @@ start_qemu() {
 
 agent_command() {
   echo "{\"execute\": \"$1\", \"arguments\": ${2-:-"{}"}}" \
-    | while ! websocat -b -n -1 ws://127.0.0.1:44444/; do sleep 1; done \
+    | while ! websocat -b -n -1 ws://127.0.0.1:44444/; do sleep 0.1; done \
     | jq -r '.return'
 }
 
@@ -143,18 +139,19 @@ if [ ! -e /cache/win11.qcow2 ]; then
 fi
 
 echo -e "\033[32;49;1mRunning \`$RUN_COMMAND\`\033[0m"
+echo -e "@ECHO OFF\nECHO OFF\n\n$RUN_COMMAND\n" > /tmp/qemu-status/run.cmd
+
+mkdir -p /tmp/qemu-status/done; touch /tmp/qemu-status/out.txt
 start_qemu -m $RUN_MEMORY_GB -o "-loadvm provisioned"
+EXEC_START=$(agent_command guest-exec '{"path": "cmd",
+  "arg": ["/c", "//10.0.2.4/qemu/run.cmd >>//10.0.2.4/qemu/out.txt & echo done > //10.0.2.4/qemu/done/done.txt"]}')
+[ "$EXEC_START" = "null" ] && (echo -e "\033[31;49mFailed to run command\033[0m" ; exit 1)
+PROCESS_PID=$(echo "$EXEC_START" | jq -r '.pid')
 
-echo -e "@ECHO OFF\nECHO OFF\n\n$RUN_COMMAND" > /tmp/qemu-status/run.cmd
-PROCESS_PID=$(agent_command guest-exec '{"path": "//10.0.2.4/qemu/run.cmd", "arg": [">//10.0.2.4/qemu/out.txt"]}' | jq -r '.pid')
+echo -e "\033[32;49mWaiting for command to complete\033[0m"
+inotifywait -q -e create /tmp/qemu-status/done > /dev/null &
+tail -f /tmp/qemu-status/out.txt --pid "$!"   # using inotify manually since tail for alpine doesn't seem to use it
 
-echo -e "\033[32;49mWaiting for PID $PROCESS_PID to complete\033[0m"
-while true; do
-  EXEC_STATUS=$(agent_command guest-exec-status '{"pid": '"$PROCESS_PID"'}')
-  [ "$(echo "$EXEC_STATUS" | jq -r '.exited')" = "true" ] && break
-  sleep 1
-done
-
-cat /tmp/qemu-status/out.txt
-
+# for faster docker shutdown, intentionally not cleaning up: qemu and the /tmp/qemu-status files
+EXEC_STATUS=$(agent_command guest-exec-status '{"pid": '"$PROCESS_PID"'}')
 exit "$(echo "$EXEC_STATUS" | jq -r '.exitcode')"
