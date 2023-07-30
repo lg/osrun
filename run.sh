@@ -1,8 +1,31 @@
 #!/bin/ash
 #shellcheck shell=dash disable=SC3036,SC3048
-set -o errexit
+set -o errexit -o noclobber -o nounset -o pipefail
 
-RUN_COMMAND=$*
+# Parse commandline arguments
+usage() {
+  echo -e "\
+  Usage: osrun [-v] [-h] <command>\n\
+  Installs Windows 11 and runs commands in a VM.\n\n\
+  -v --verbose: Verbose mode (useful while installing)\n\
+  -p --pause: Do not close the VM after the command finishes\n\
+  -h --help: Display this help" 1>&2
+  exit 1
+}; [ $# -eq 0 ] && usage
+
+VERBOSE=false
+PAUSE=false
+params="$(getopt -o vhp -l verbose,help,pause -n "osrun" -- "$@")"
+eval set -- "$params"
+while true; do case "$1" in
+  -v|--verbose) VERBOSE=true; shift ;;
+  -p|--pause) PAUSE=true; shift ;;
+  --) shift; break ;;
+  *) usage ;;
+esac; done
+
+shift
+RUN_COMMAND="$*"
 
 [ ! -e /dev/kvm ] && echo -e "\033[33;49;1mKVM acceleration not found. Ensure you're using --device=/dev/kvm with docker.\033[0m"
 
@@ -54,9 +77,17 @@ start_qemu() {
 }
 
 agent_command() {
-  echo "{\"execute\": \"$1\", \"arguments\": ${2-:-"{}"}}" \
-    | while ! websocat -b -n -1 ws://127.0.0.1:44444/; do sleep 0.1; done \
-    | jq -r '.return'
+  local val; local execute; local arguments
+  execute="$1"; arguments="${2:-"{}"}"
+  val=$(echo "{\"execute\": \"$execute\", \"arguments\": $arguments}" \
+    | while ! websocat -b -n -1 ws://127.0.0.1:44444/ 2>/dev/null; do sleep 0.1; done)
+
+  if [ "$(echo "$val" | jq -r '.error')" != null ]; then
+    echo -e "\033[31;49mError running $execute$([ "$arguments" != "{}" ] && echo " ($arguments)"): $(\
+      echo "$val" | jq -r '.error.desc')\033[0m"
+    exit 1
+  fi
+  echo "$val" | jq -r '.return'
 }
 
 if [ ! -e /cache/win11.qcow2 ]; then
@@ -128,7 +159,7 @@ if [ ! -e /cache/win11.qcow2 ]; then
   echo -e "\033[32;32mCreating VM snapshot\033[0m"
   start_qemu -m $RUN_MEMORY_GB
   QEMU_PID=$!
-  echo '{"execute": "guest-get-osinfo"}' | while ! websocat -b -n -1 ws://127.0.0.1:44444/; do sleep 1; done
+  agent_command guest-get-osinfo
   sleep 10
   echo -e "savevm provisioned\nq" | nc 127.0.0.1 55556
   wait "$QEMU_PID"
@@ -138,20 +169,29 @@ if [ ! -e /cache/win11.qcow2 ]; then
   rm -f /cache/win11-prepared.iso /cache/win11-installedcopied.qcow2 /cache/win11-clean.iso
 fi
 
-echo -e "\033[32;49;1mRunning \`$RUN_COMMAND\`\033[0m"
+$VERBOSE && echo -e "\033[32;49;1mRunning \`$RUN_COMMAND\`\033[0m"
 echo -e "@ECHO OFF\nECHO OFF\n\n$RUN_COMMAND\n" > /tmp/qemu-status/run.cmd
 
+$VERBOSE && echo -e "\033[32;49mRestoring snapshot\033[0m"
 mkdir -p /tmp/qemu-status/done; touch /tmp/qemu-status/out.txt
 start_qemu -m $RUN_MEMORY_GB -o "-loadvm provisioned"
+
+# Since we resume a snapshot, we need to update the clock
+agent_command guest-exec "{'path': 'cmd', 'arg': ['/c', 'powershell Set-Date \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\" & \
+  echo done > //10.0.2.4/qemu/done/done.txt']}" > /dev/null
+inotifywait -q -e create /tmp/qemu-status/done > /dev/null
+rm -f /tmp/qemu-status/done/done.txt
+
+$VERBOSE && echo -e "\033[32;49mRunning command\033[0m"
 EXEC_START=$(agent_command guest-exec '{"path": "cmd",
-  "arg": ["/c", "//10.0.2.4/qemu/run.cmd >>//10.0.2.4/qemu/out.txt & echo done > //10.0.2.4/qemu/done/done.txt"]}')
-[ "$EXEC_START" = "null" ] && (echo -e "\033[31;49mFailed to run command\033[0m" ; exit 1)
+  "arg": ["/c", "//10.0.2.4/qemu/run.cmd >>//10.0.2.4/qemu/out.txt 2>&1 & echo done > //10.0.2.4/qemu/done/done.txt"]}')
 PROCESS_PID=$(echo "$EXEC_START" | jq -r '.pid')
 
-echo -e "\033[32;49mWaiting for command to complete\033[0m"
+$VERBOSE && echo -e "\033[32;49mWaiting for command to complete\033[0m"
 inotifywait -q -e create /tmp/qemu-status/done > /dev/null &
 tail -f /tmp/qemu-status/out.txt --pid "$!"   # using inotify manually since tail for alpine doesn't seem to use it
 
 # for faster docker shutdown, intentionally not cleaning up: qemu and the /tmp/qemu-status files
+$PAUSE && echo -e "\033[32;49mPausing as requested\033[0m" && read -r
 EXEC_STATUS=$(agent_command guest-exec-status '{"pid": '"$PROCESS_PID"'}')
 exit "$(echo "$EXEC_STATUS" | jq -r '.exitcode')"
