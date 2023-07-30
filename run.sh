@@ -60,7 +60,7 @@ start_qemu() {
     -device e1000,netdev=user.0 \
     -netdev user,id=user.0,smb=/tmp/qemu-status \
     \
-    -drive file=$VOLUME_PATH,media=disk,cache=unsafe,if=virtio,format=qcow2,discard=unmap \
+    -drive "file=$VOLUME_PATH,media=disk,cache=unsafe,if=virtio,format=qcow2,discard=unmap" \
     $QEMU_OPTS \
     \
     -device qemu-xhci \
@@ -166,7 +166,7 @@ if [ ! -e /cache/win11.qcow2 ]; then
 
   echo -e "\033[32;49mWindows installation complete\033[0m"
   trap - SIGINT SIGTERM
-  rm -f /cache/win11-prepared.iso /cache/win11-installedcopied.qcow2 /cache/win11-clean.iso
+  rm -f /cache/win11-prepared.iso /cache/win11-installercopied.qcow2 /cache/win11-clean.iso
 fi
 
 $VERBOSE && echo -e "\033[32;49;1mRunning \`$RUN_COMMAND\`\033[0m"
