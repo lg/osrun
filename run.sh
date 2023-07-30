@@ -27,8 +27,6 @@ esac; done
 shift
 RUN_COMMAND="$*"
 
-[ ! -e /dev/kvm ] && echo -e "\033[33;49;1mKVM acceleration not found. Ensure you're using --device=/dev/kvm with docker.\033[0m"
-
 # Windows 11 from May 2023, go to https://uupdump.net and get the link to the latest Retail Windows 11
 UUPDUMP_URL="http://uupdump.net/get.php?id=3a34d712-ee6f-46fa-991a-e7d9520c16fc&pack=en-us&edition=professional&aria2=2"
 UUPDUMP_CONVERT_SCRIPT_URL="https://github.com/uup-dump/converter/raw/073071a0003a755233c2fa74c7b6173cd7075ed7/convert.sh"
@@ -40,6 +38,12 @@ DEFAULT_VOLUME_PATH="/cache/win11.qcow2"
 mkdir -p /tmp/qemu-status
 
 start_qemu() {
+  KVM_PARAM=",accel=kvm"; CPU_PARAM="-cpu host"
+  if [ ! -e /dev/kvm ]; then
+    echo -e "\033[33;49mKVM acceleration not found. Ensure you're using --device=/dev/kvm with docker. Virtualization will be very slow.\033[0m" > /dev/stderr
+    KVM_PARAM=""; CPU_PARAM="-accel tcg"
+  fi
+
   VOLUME_PATH="$DEFAULT_VOLUME_PATH"
   while getopts 'm:o:v:' OPTION; do case "$OPTION" in
     m) MEMORY_GB="$OPTARG" ;;
@@ -50,9 +54,9 @@ start_qemu() {
   qemu-system-x86_64 \
     -name osrun \
     \
-    -machine type=q35,accel=kvm \
+    -machine "type=q35$KVM_PARAM" \
     -rtc clock=host,base=localtime \
-    -cpu host \
+    $CPU_PARAM \
     -smp "$(grep -c ^processor /proc/cpuinfo)" \
     -m "${MEMORY_GB:-8}G" \
     -device virtio-balloon \
@@ -73,7 +77,6 @@ start_qemu() {
     -vnc 0.0.0.0:50 \
     -monitor tcp:0.0.0.0:55556,server=on,wait=off \
     &
-  #
 }
 
 agent_command() {
@@ -170,9 +173,8 @@ if [ ! -e /cache/win11.qcow2 ]; then
 fi
 
 $VERBOSE && echo -e "\033[32;49;1mRunning \`$RUN_COMMAND\`\033[0m"
-echo -e "@ECHO OFF\nECHO OFF\n\n$RUN_COMMAND\n" > /tmp/qemu-status/run.cmd
-
 $VERBOSE && echo -e "\033[32;49mRestoring snapshot\033[0m"
+echo -e "@ECHO OFF\nECHO OFF\n\n$RUN_COMMAND\n" > /tmp/qemu-status/run.cmd
 mkdir -p /tmp/qemu-status/done; touch /tmp/qemu-status/out.txt
 start_qemu -m $RUN_MEMORY_GB -o "-loadvm provisioned"
 
