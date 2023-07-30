@@ -5,7 +5,7 @@ A docker container to run a command in Windows 11 (via QEMU). On first run it wi
 ## Usage
 
 ```bash
-docker run -it --rm --device=/dev/kvm -v $(pwd)/cache:/cache osrun 'dir c:\windows\system32'
+docker run -it --rm --device=/dev/kvm -v $(pwd)/cache:/cache ghcr.io/lg/osrun 'dir c:\windows\system32'
 ```
 
 If you don't have kvm on your machine, you can skip the parameter, but things will be a lot slower. This mode is currently unreliable and may freeze during Windows 11 installation.
