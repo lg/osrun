@@ -2,10 +2,11 @@
 #shellcheck shell=dash disable=SC3036,SC3048
 set -o errexit
 
-while getopts 'c:' OPTION; do case "$OPTION" in
-  c) RUN_COMMAND="$OPTARG" ;;
+while getopts '' OPTION; do case "$OPTION" in
   *) exit 1 ;;
 esac; done
+shift $((OPTIND - 1))
+RUN_COMMAND="${*:-echo hello}"
 
 [ ! -e /dev/kvm ] && echo -e "\033[33;49;1mKVM acceleration not found. Ensure you're using --device=/dev/kvm with docker.\033[0m"
 
@@ -15,18 +16,20 @@ UUPDUMP_CONVERT_SCRIPT_URL="https://github.com/uup-dump/converter/raw/073071a000
 VIRTIO_URL="https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/stable-virtio/virtio-win.iso"
 INSTALL_MEMORY_GB=8
 RUN_MEMORY_GB=4
+DEFAULT_VOLUME_PATH="/cache/win11.qcow2"
 
 mkdir -p /tmp/qemu-status
 
 start_qemu() {
-  while getopts 'm:o:' OPTION; do case "$OPTION" in
+  VOLUME_PATH="$DEFAULT_VOLUME_PATH"
+  while getopts 'm:o:v:' OPTION; do case "$OPTION" in
     m) MEMORY_GB="$OPTARG" ;;
     o) QEMU_OPTS="$OPTARG" ;;
+    v) VOLUME_PATH="$OPTARG" ;;
     *) exit 1 ;;
   esac; done
   qemu-system-x86_64 \
-    -deamonize \
-    -name arkalis-win \
+    -name osrun \
     \
     -machine type=q35,accel=kvm \
     -rtc clock=host,base=localtime \
@@ -38,7 +41,7 @@ start_qemu() {
     -device e1000,netdev=user.0 \
     -netdev user,id=user.0,smb=/tmp/qemu-status \
     \
-    -drive file=/cache/win.qcow2,media=disk,cache=unsafe,if=virtio,format=qcow2,discard=unmap \
+    -drive file=$VOLUME_PATH,media=disk,cache=unsafe,if=virtio,format=qcow2,discard=unmap \
     $QEMU_OPTS \
     \
     -device qemu-xhci \
@@ -49,42 +52,51 @@ start_qemu() {
     -device virtserialport,chardev=qga0,name=org.qemu.guest_agent.0 \
     \
     -vnc 0.0.0.0:50 \
-    -monitor tcp:0.0.0.0:55556,server=on,wait=off
+    -monitor tcp:0.0.0.0:55556,server=on,wait=off \
+    &
+  #
 }
 
-if [ ! -e /cache/win.qcow2 ]; then
+agent_command() {
+  echo "{\"execute\": \"$1\", \"arguments\": ${2-:-"{}"}}" \
+    | while ! websocat -b -n -1 ws://127.0.0.1:44444/; do sleep 1; done \
+    | jq -r '.return'
+}
+
+if [ ! -e /cache/win11.qcow2 ]; then
+  echo -e "\033[32;49;1mWindows 11 disk image is missing, going to install it now\033[0m"
+  mkdir -p /root/.aria2/ ; echo -e "console-log-level=warn\nmax-connection-per-server=16\nsplit=16\n\
+    max-concurrent-downloads=5\ncontinue\nremote-time\nauto-file-renaming=false\n" > "/root/.aria2/aria2.conf"
+
   if [ ! -e /cache/win11-clean.iso ]; then
-    echo -e "\033[32;49;1mWindows 11 disk image is missing, going to install it now\033[0m"
-    echo -e "\033[32;49mDownloading and building Windows 11\033[0m"
+    echo -e "\033[32;49;1mDownloading Windows 11 from Windows Update\033[0m"
     mkdir -p /tmp/win11
-    aria2c --no-conf --dir /tmp/win11 --out aria-script --allow-overwrite=true --auto-file-renaming=false "$UUPDUMP_URL"
-    aria2c --no-conf --dir /tmp/win11 --input-file /tmp/win11/aria-script --max-connection-per-server 16 --split 16 --max-concurrent-downloads 5 --continue --remote-time
-    aria2c --no-conf --dir /tmp/win11 --out convert.sh --allow-overwrite=true --auto-file-renaming=false "$UUPDUMP_CONVERT_SCRIPT_URL"
+    aria2c --dir /tmp/win11 --out aria-script --allow-overwrite=true "$UUPDUMP_URL"
+    aria2c --dir /tmp/win11 --input-file /tmp/win11/aria-script
+    aria2c --dir /tmp/win11 --out convert.sh --allow-overwrite=true "$UUPDUMP_CONVERT_SCRIPT_URL"
     chmod +x /tmp/win11/convert.sh
+
+    echo -e "\033[32;49;1mBuilding Windows 11 ISO\033[0m"
     /tmp/win11/convert.sh wim /tmp/win11 0
     mv /*PROFESSIONAL_X64_EN-US.ISO /cache/win11-clean.iso
     rm -rf /tmp/win11
   fi
 
   if [ ! -e /cache/win11-prepared.iso ]; then
-    echo -e "\033[32;49mDownloading virtio drivers and embedding them and init scripts Windows installer\033[0m"
+    echo -e "\033[32;49;1mDownloading virtio drivers and embedding them and init scripts Windows installer\033[0m"
     mkdir -p /tmp/win11
-    aria2c -x 5 -s 5 -d /tmp -o virtio-win.iso "$VIRTIO_URL"
+    aria2c --dir /tmp --out virtio-win.iso "$VIRTIO_URL"
     7z x /cache/win11-clean.iso -o/tmp/win11
     7z x /tmp/virtio-win.iso -o/tmp/win11/virtio
     cp /win11-init/* /tmp/win11
     cd /tmp/win11
-    genisoimage -b "boot/etfsboot.com" --no-emul-boot --eltorito-alt-boot -b "efi/microsoft/boot/efisys.bin" \
+    genisoimage -quiet -b "boot/etfsboot.com" --no-emul-boot --eltorito-alt-boot -b "efi/microsoft/boot/efisys.bin" \
       --no-emul-boot --udf -iso-level 3 --hide "*" -V "WIN11" -o /cache/win11-prepared.iso .
     cd -
     rm -rf /tmp/win11
   fi
 
-  echo -e "\033[32;32mCreating temp disk image\033[0m"
-  qemu-img create -f qcow2 -o compression_type=zstd -q /cache/win.qcow2 15G
-
-  echo -e "\033[32;32mInstalling Windows (Logs redirected here, VNC 5950, QEMU Monitor 55556, QEMU Agent 44444)\033[0m"
-  trap 'echo -e "\033[31;49mTerminating\033[0m" ; rm -f /cache/win.qcow2 ; exit 1' SIGINT SIGTERM
+  echo -e "\033[32;32;1mInstalling Windows (Logs redirected here, VNC 5950, QEMU Monitor 55556, QEMU Agent 44444)\033[0m"
 
   # Set up direct logging with the console here. Use in Windows with: `echo hello >> \\10.0.2.4\qemu\status.txt`. Note
   # that you might need to run `wpeinit` if you're in the Windows installer to start networking.
@@ -92,8 +104,26 @@ if [ ! -e /cache/win.qcow2 ]; then
   touch /tmp/qemu-status/status.txt
   tail -f /tmp/qemu-status/status.txt &
 
-  start_qemu -m $INSTALL_MEMORY_GB -o "-drive file=/cache/win11-prepared.iso,media=cdrom -boot once=d"
-  wait "$!"
+  if [ ! -e /cache/win11-installercopied.qcow2 ]; then
+    echo -e "\033[32;32;1mCreating temp disk image\033[0m"
+    trap 'echo -e "\033[31;49mTerminating\033[0m" ; rm -f /cache/win11-installercopied.qcow2 ; exit 1' SIGINT SIGTERM
+    qemu-img create -f qcow2 -o compression_type=zstd -q /cache/win11-installercopied.qcow2 15G
+
+    echo -e "\033[32;32mBooting into Windows Setup\033[0m"
+    start_qemu -m $INSTALL_MEMORY_GB -o "-drive file=/cache/win11-prepared.iso,media=cdrom -action reboot=shutdown" \
+      -v "/cache/win11-installercopied.qcow2"
+    wait "$!"
+    trap - SIGINT SIGTERM
+  fi
+
+  trap 'echo -e "\033[31;49mTerminating\033[0m" ; rm -f /cache/win11.qcow2 ; exit 1' SIGINT SIGTERM
+  if [ ! -e /cache/win11.qcow2 ]; then
+    echo -e "\033[32;32mRunning installation scripts\033[0m"
+    cp /cache/win11-installercopied.qcow2 /cache/win11.qcow2
+    start_qemu -m $INSTALL_MEMORY_GB -o "-drive file=/cache/win11-prepared.iso,media=cdrom" -v "/cache/win11.qcow2"
+    wait "$!"
+  fi
+
   if ! grep -q "Successfully provisioned image." /tmp/qemu-status/status.txt; then
     echo -e "\033[31;49mFailed to install Windows successfully, aborting\033[0m"
     kill -INT $$
@@ -101,7 +131,7 @@ if [ ! -e /cache/win.qcow2 ]; then
 
   echo -e "\033[32;32mCreating VM snapshot\033[0m"
   start_qemu -m $RUN_MEMORY_GB
-  QEMU_PID="$!"
+  QEMU_PID=$!
   echo '{"execute": "guest-get-osinfo"}' | while ! websocat -b -n -1 ws://127.0.0.1:44444/; do sleep 1; done
   sleep 10
   echo -e "savevm provisioned\nq" | nc 127.0.0.1 55556
@@ -109,23 +139,22 @@ if [ ! -e /cache/win.qcow2 ]; then
 
   echo -e "\033[32;49mWindows installation complete\033[0m"
   trap - SIGINT SIGTERM
-  rm -f /cache/win11-clean.iso /cache/win11-prepared.iso
+  rm -f /cache/win11-prepared.iso /cache/win11-installedcopied.qcow2 /cache/win11-clean.iso
 fi
 
 echo -e "\033[32;49;1mRunning \`$RUN_COMMAND\`\033[0m"
 start_qemu -m $RUN_MEMORY_GB -o "-loadvm provisioned"
 
-PROCESS_PID=$(echo "{\"execute\": \"guest-exec\", \"args\": {\"path\": \"cmd\", \"arg\": [\"/c\", \"$RUN_COMMAND\"]}}" \
-  | while ! websocat -b -n -1 ws://127.0.0.1:44444/; do sleep 1; done \
-  | jq -r '.pid')
+echo -e "@ECHO OFF\nECHO OFF\n\n$RUN_COMMAND" > /tmp/qemu-status/run.cmd
+PROCESS_PID=$(agent_command guest-exec '{"path": "//10.0.2.4/qemu/run.cmd", "arg": [">//10.0.2.4/qemu/out.txt"]}' | jq -r '.pid')
 
-EXITED="false"
-while [ "$EXITED" != "true" ]; do
+echo -e "\033[32;49mWaiting for PID $PROCESS_PID to complete\033[0m"
+while true; do
+  EXEC_STATUS=$(agent_command guest-exec-status '{"pid": '"$PROCESS_PID"'}')
+  [ "$(echo "$EXEC_STATUS" | jq -r '.exited')" = "true" ] && break
   sleep 1
-  EXEC_STATUS=$(echo "{\"execute\": \"guest-exec-status\", \"args\": {\"pid\": $PROCESS_PID\"}}" \
-    | websocat -b -n -1 ws://127.0.0.1:44444/)
-  EXITED=$(echo "$EXEC_STATUS" | jq -r '.exited')
-  EXIT_CODE=$(echo "$EXEC_STATUS" | jq -r '.exitcode')
 done
 
-exit "$EXIT_CODE"
+cat /tmp/qemu-status/out.txt
+
+exit "$(echo "$EXEC_STATUS" | jq -r '.exitcode')"

@@ -18,6 +18,10 @@ foreach ($service in $serviceName) {
 Write-Output "Disabling Windows Defender tasks"
 Get-ScheduledTask -TaskPath '\Microsoft\Windows\Windows Defender*' | Disable-ScheduledTask | Out-Null
 
+Write-Output "One last disable of Windows Update by removing permissions"
+& icacls.exe "c:\Windows\SoftwareDistribution" /inheritance:r /t /c *>&1 | Out-Null
+& icacls.exe "c:\Windows\SoftwareDistribution" /remove:g SYSTEM /t /c *>&1 | Out-Null
+
 Write-Output "Disabling OOBE overlay for first Administrator login"
 Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -Name 'EnableFirstLogonAnimation' -Value 0 -Type DWord -Force
 
