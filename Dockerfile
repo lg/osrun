@@ -1,6 +1,3 @@
-# build with: docker build -t arkalis-win-builder .
-# run with: docker run -it --rm --device=/dev/kvm -v $(pwd)/cache:/cache arkalis-win-builder
-#
 # hadolint global ignore=DL3029,DL3018
 
 FROM --platform=linux/amd64 alpine:3.18
