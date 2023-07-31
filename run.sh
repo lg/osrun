@@ -24,7 +24,6 @@ while true; do case "$1" in
   *) usage ;;
 esac; done
 
-shift
 RUN_COMMAND="$*"
 
 # Windows 11 from May 2023, go to https://uupdump.net and get the link to the latest Retail Windows 11
@@ -174,26 +173,33 @@ fi
 
 $VERBOSE && echo -e "\033[32;49;1mRunning \`$RUN_COMMAND\`\033[0m"
 $VERBOSE && echo -e "\033[32;49mRestoring snapshot\033[0m"
-echo -e "@ECHO OFF\nECHO OFF\n\n$RUN_COMMAND\n" > /tmp/qemu-status/run.cmd
-mkdir -p /tmp/qemu-status/done; touch /tmp/qemu-status/out.txt
+echo -e "@ECHO OFF\nECHO OFF\n" > /tmp/qemu-status/run.cmd
+echo "$RUN_COMMAND" >> /tmp/qemu-status/run.cmd
 start_qemu -m $RUN_MEMORY_GB -o "-loadvm provisioned"
 
 # Since we resume a snapshot, we need to update the clock
+mkdir -p /tmp/qemu-status/done
 agent_command guest-exec "{'path': 'cmd', 'arg': ['/c', 'powershell Set-Date \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\" & \
   echo done > //10.0.2.4/qemu/done/done.txt']}" > /dev/null
 inotifywait -q -e create /tmp/qemu-status/done > /dev/null
 rm -f /tmp/qemu-status/done/done.txt
 
 $VERBOSE && echo -e "\033[32;49mRunning command\033[0m"
+touch /tmp/qemu-status/out.txt
+inotifywait -q -e create /tmp/qemu-status/done > /dev/null &
+DONE_WATCHER_PID=$!
 EXEC_START=$(agent_command guest-exec '{"path": "cmd",
   "arg": ["/c", "//10.0.2.4/qemu/run.cmd >>//10.0.2.4/qemu/out.txt 2>&1 & echo done > //10.0.2.4/qemu/done/done.txt"]}')
 PROCESS_PID=$(echo "$EXEC_START" | jq -r '.pid')
 
 $VERBOSE && echo -e "\033[32;49mWaiting for command to complete\033[0m"
-inotifywait -q -e create /tmp/qemu-status/done > /dev/null &
-tail -f /tmp/qemu-status/out.txt --pid "$!"   # using inotify manually since tail for alpine doesn't seem to use it
+tail -n +0 -f /tmp/qemu-status/out.txt --pid "$DONE_WATCHER_PID"   # using inotify manually since tail for alpine doesn't seem to use it
+while true; do  # also ensure the pid ends (so we get the exit code)
+  EXEC_STATUS=$(agent_command guest-exec-status '{"pid": '"$PROCESS_PID"'}')
+  [ "$(echo "$EXEC_STATUS" | jq -r '.exited')" = "true" ] && break
+  sleep 0.1
+done
+$PAUSE && echo -e "\033[32;49mPausing as requested\033[0m" && read -r
 
 # for faster docker shutdown, intentionally not cleaning up: qemu and the /tmp/qemu-status files
-$PAUSE && echo -e "\033[32;49mPausing as requested\033[0m" && read -r
-EXEC_STATUS=$(agent_command guest-exec-status '{"pid": '"$PROCESS_PID"'}')
 exit "$(echo "$EXEC_STATUS" | jq -r '.exitcode')"
