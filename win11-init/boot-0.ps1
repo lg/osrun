@@ -1,29 +1,80 @@
 # boot-0: This script is run as the SYSTEM user on the first boot post-installer. System will reboot automatically on completion.
 $ErrorActionPreference = "Inquire"
+$ProgressPreference = 'SilentlyContinue'
+
+function Set-RegItem {
+  param ([Parameter(Mandatory=$true)] [string]$PathWithName, [Parameter(Mandatory=$true)] $Value)
+  $Path = $PathWithName.Substring(0, $PathWithName.LastIndexOf("\"))
+  $Name = $PathWithName.Substring($PathWithName.LastIndexOf("\") + 1)
+
+  if (!(Test-Path $Path)) { New-Item -Path $Path -Force | Out-Null }
+  Set-ItemProperty -Path $Path -Name $Name -Value $Value -Force | Out-Null
+}
 
 Write-Output "Disabling system access to Windows Defender, Windows Update and Edge Updater"
 $serviceName = @(
   "Sense", "WdBoot", "WdFilter", "WdNisDrv", "WdNisSvc", "WinDefend",   # Windows Defender
+  "SecurityHealthService",
   "WaasMedicSvc", "wuauserv", "UsoSvc",                                 # Windows Update
-  "edgeupdate", "edgeupdatem"                                           # Edge Updater
+  "edgeupdate", "edgeupdatem", "MicrosoftEdgeElevationService"          # Edge Updater
+  "sppsvc",                                                             # Software Protection Platform
+  "SgrmBroker"                                                          # System Guard Runtime Monitor Broker
 )
 foreach ($service in $serviceName) {
   $key = "HKLM:\SYSTEM\CurrentControlSet\Services\$service"
   $acl = Get-Acl $key ; $acl.SetAccessRuleProtection($true, $true) ; Set-Acl $key $acl
-  $acl = Get-Acl $key ; $acl.RemoveAccessRuleAll((New-Object System.Security.AccessControl.RegistryAccessRule("NT AUTHORITY\SYSTEM", "FullControl", "Allow"))) ; Set-Acl $key $acl
-  Set-Service -Name $service -StartupType Disabled -ErrorAction SilentlyContinue | Out-Null
-  Stop-Service -Name $service -Force -ErrorAction SilentlyContinue | Out-Null
+  $acl.Access | ForEach-Object { try { $acl.RemoveAccessRule($_) } catch {} } | Out-Null
+  Set-Acl $key $acl
+  Set-Service -Name $service -StartupType Disabled -ErrorAction Ignore | Out-Null
+  Stop-Service -Name $service -Force -ErrorAction Ignore | Out-Null
 }
 
-Write-Output "Disabling Windows Defender tasks"
+Write-Output "Disabling scheduled tasks used for Windows Defender, Windows Update and Edge Updater"
+Get-ScheduledTask -TaskPath '\Microsoft\Windows\Data Integrity Scan*' | Disable-ScheduledTask | Out-Null
+Get-ScheduledTask -TaskPath '\Microsoft\Windows\Diagnosis*' | Disable-ScheduledTask | Out-Null
+Get-ScheduledTask -TaskPath '\Microsoft\Windows\SoftwareProtectionPlatform*' | Disable-ScheduledTask | Out-Null
+Get-ScheduledTask -TaskPath '\Microsoft\Windows\UpdateOrchestrator*' | Disable-ScheduledTask | Out-Null
+Get-ScheduledTask -TaskPath '\Microsoft\Windows\WaaSMedic*' | Disable-ScheduledTask | Out-Null
 Get-ScheduledTask -TaskPath '\Microsoft\Windows\Windows Defender*' | Disable-ScheduledTask | Out-Null
+Get-ScheduledTask -TaskPath '\Microsoft\Windows\WindowsUpdate*' | Disable-ScheduledTask | Out-Null
+Get-ScheduledTask -TaskPath '\' -TaskName 'MicrosoftEdgeUpdate*' | Disable-ScheduledTask | Out-Null
 
-Write-Output "One last disable of Windows Update by removing permissions"
+Write-Output "Disabling Edge Update for future"
+Set-RegItem -PathWithName "HKLM:\SOFTWARE\Microsoft\EdgeUpdate\DoNotUpdateToEdgeWithChromium" -Value 1
+Remove-Item "C:\Program Files (x86)\Microsoft\EdgeUpdate\MicrosoftEdgeUpdate.exe" -Force | Out-Null
+
+Write-Output "Disabling Smart Screen"
+Set-RegItem -PathWithName "HKLM:\SOFTWARE\Policies\Microsoft\Windows\System\EnableSmartScreen" -Value 0
+Set-RegItem -PathWithName "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\SmartScreenEnabled" -Value "Off"
+
+Write-Output "Fully disabling sensitive files from any access"
+$executables = @(
+  "c:\windows\system32\smartscreen.exe",
+  "c:\windows\system32\sppsvc.exe",
+  "c:\windows\system32\ctfmon.exe",
+  "c:\windows\system32\Sgrm\SgrmBroker.exe"
+)
+foreach ($executable in $executables) {
+  $acl = Get-Acl $executable ; $acl.SetAccessRuleProtection($true, $true) ; Set-Acl $executable $acl
+  $acl.Access | ForEach-Object { try { $acl.RemoveAccessRule($_) } catch {} } | Out-Null
+  Set-Acl $executable $acl
+}
+
+Write-Output "Disabling all scheduled tasks with a scheduled time or idle trigger"
+Get-ScheduledTask | Where-Object State -NE "Disabled" |
+  Where-Object { $_.Triggers | Where-Object { $_.CimClass -Like "*idle*" } } | Disable-ScheduledTask | Out-Null
+Get-ScheduledTask | Where-Object State -NE "Disabled" |
+  Get-ScheduledTaskInfo | Where-Object { $_.NextRunTime -ne $null } |
+  ForEach-Object { Disable-ScheduledTask -TaskName $_.TaskName -TaskPath $_.TaskPath | Out-Null }
+
+Write-Output "Disable scheduled tasks known to be stragglers"
+Disable-ScheduledTask -TaskPath '\Microsoft\Windows\Multimedia' -TaskName 'SystemSoundsService' | Out-Null
+Disable-ScheduledTask -TaskPath '\Microsoft\Windows\Wininet' -TaskName 'CacheTask' | Out-Null
+Disable-ScheduledTask -TaskPath '\Microsoft\Windows\WlanSvc' -TaskName 'CDSSync' | Out-Null
+
+Write-Output "Removing filesystem permissions for Windows Update"
 & icacls.exe "c:\Windows\SoftwareDistribution" /inheritance:r /t /c *>&1 | Out-Null
 & icacls.exe "c:\Windows\SoftwareDistribution" /remove:g SYSTEM /t /c *>&1 | Out-Null
-
-Write-Output "Disabling OOBE overlay for first Administrator login"
-Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -Name 'EnableFirstLogonAnimation' -Value 0 -Type DWord -Force
 
 Write-Output "Disabling scheduled tasks and disk cleanup"
 Disable-ScheduledTask -TaskName 'ScheduledDefrag' -TaskPath '\Microsoft\Windows\Defrag' | Out-Null
@@ -33,24 +84,14 @@ Disable-ScheduledTask -TaskName 'SilentCleanup' -TaskPath '\Microsoft\Windows\Di
 Disable-ScheduledTask -TaskName 'WinSAT' -TaskPath '\Microsoft\Windows\Maintenance' | Out-Null
 Disable-ScheduledTask -TaskName 'StartComponentCleanup' -TaskPath '\Microsoft\Windows\Servicing' | Out-Null
 
-Write-Output "Disabling other scheduled tasks used for security"
-Get-ScheduledTask -TaskPath '\Microsoft\Windows\Data Integrity Scan*' | Disable-ScheduledTask | Out-Null
-Get-ScheduledTask -TaskPath '\Microsoft\Windows\Diagnosis*' | Disable-ScheduledTask | Out-Null
-Get-ScheduledTask -TaskPath '\Microsoft\Windows\SoftwareProtectionPlatform*' | Disable-ScheduledTask | Out-Null
-Get-ScheduledTask -TaskPath '\Microsoft\Windows\UpdateOrchestrator*' | Disable-ScheduledTask | Out-Null
-Get-ScheduledTask -TaskPath '\Microsoft\Windows\WaaSMedic*' | Disable-ScheduledTask | Out-Null
-Get-ScheduledTask -TaskPath '\Microsoft\Windows\Windows Defender*' | Disable-ScheduledTask | Out-Null
-Get-ScheduledTask -TaskPath '\Microsoft\Windows\WindowsUpdate*' | Disable-ScheduledTask | Out-Null
-
-###
-
-Write-Output "Disabling other scheduled tasks"
-Disable-ScheduledTask -TaskName 'MicrosoftEdgeUpdateTaskMachineUA' -TaskPath '\' | Out-Null
+Write-Output "Disabling other less useful scheduled tasks"
 Get-ScheduledTask -TaskPath '\Microsoft\Windows\Customer Experience Improvement Program*' | Disable-ScheduledTask | Out-Null
 Get-ScheduledTask -TaskPath '\Microsoft\Windows\Flighting*' | Disable-ScheduledTask | Out-Null
 Get-ScheduledTask -TaskPath '\Microsoft\Windows\Windows Error Reporting*' | Disable-ScheduledTask | Out-Null
 Get-ScheduledTask -TaskPath '\Microsoft\Windows\InstallService*' | Disable-ScheduledTask | Out-Null
 Get-ScheduledTask -TaskName "*OneDrive*" | Disable-ScheduledTask | Out-Null
+
+#####
 
 Write-Output "Disabling System Restore"
 Disable-ComputerRestore -Drive "C:"
@@ -74,8 +115,7 @@ $pagefile.delete() | Out-Null
 Write-Output "Disabling disk indexing"
 $obj = Get-WmiObject -Class Win32_Volume -Filter "DriveLetter='C:'"
 $obj | Set-WmiInstance -Arguments @{ IndexingEnabled = $False } | Out-Null
-New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search" -Force | Out-Null
-Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search" -Name "AllowCortana" -Value 0
+Set-RegItem -PathWithName "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search\AllowCortana" -Value 0
 
 Write-Output "Disabling Windows Search"
 Set-Service WSearch -StartupType Disabled
@@ -90,45 +130,39 @@ Start-Process -FilePath "powercfg.exe" -ArgumentList "-change", "-standby-timeou
 Start-Process -FilePath "powercfg.exe" -ArgumentList "-change", "-disk-timeout-ac", "0" -Wait
 Start-Process -FilePath "powercfg.exe" -ArgumentList "-change", "-hibernate-timeout-ac", "0" -Wait
 Start-Process -FilePath "powercfg.exe" -ArgumentList "/h", "off" -Wait
-Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Power" -Name "HiberbootEnabled" -Value 0
-Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Power" -Name "HibernateFileSizePercent" -Value 0
-Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Power" -Name "HibernateEnabled" -Value 0
+Set-RegItem -PathWithName "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Power\HiberbootEnabled" -Value 0
+Set-RegItem -PathWithName "HKLM:\SYSTEM\CurrentControlSet\Control\Power\HibernateFileSizePercent" -Value 0
+Set-RegItem -PathWithName "HKLM:\SYSTEM\CurrentControlSet\Control\Power\HibernateEnabled" -Value 0
 
 Write-Output "Making sure long paths are enabled so we can access all files"
-Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1
+Set-RegItem -PathWithName "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem\LongPathsEnabled" -Value 1
 
 Write-Output "Disabling NTP time sync"
 Start-Process -FilePath "w32tm.exe" -ArgumentList "/config", "/syncfromflags:NO" -Wait
 
 Write-Output "Disabling Widgets"
-New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Dsh" -Force | Out-Null
-Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Dsh" -Name "AllowNewsAndInterests" -Value 0
+Set-RegItem -PathWithName "HKLM:\SOFTWARE\Policies\Microsoft\Dsh\AllowNewsAndInterests" -Value 0
 
 Write-Output "Hiding Windows Security notifications"
-New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender Security Center\Notifications" -Force | Out-Null
-Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender Security Center\Notifications" -Name "DisableNotifications" -Value 1
+Set-RegItem -PathWithName "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender Security Center\Notifications\DisableNotifications" -Value 1
 
 Write-Output "Hiding Suggested Content from Start Menu"
 $registryKeys = @("DisableSoftLanding", "SubscribedContent-338393Enabled", "SubscribedContent-338389Enabled",
   "SubscribedContent-353694Enabled", "SubscribedContent-353696Enabled", "DisableWindowsConsumerFeatures")
-New-Item -Path "HKLM:\HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\CloudContent" -Force | Out-Null
 foreach ($key in $registryKeys) {
-  New-ItemProperty -Path "HKLM:\HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\CloudContent" -Name $key -Value 1 -PropertyType DWORD -Force | Out-Null
+  Set-RegItem -PathWithName "HKLM:\HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\CloudContent\$key" -Value 1
 }
 $registryKeys = @("ContentDeliveryAllowed", "FeatureManagementEnabled", "OemPreInstalledAppsEnabled",
   "PreInstalledAppsEnabled", "SilentInstalledAppsEnabled", "SoftLandingEnabled", "SystemPaneSuggestionsEnabled")
-New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" -Force | Out-Null
 foreach ($key in $registryKeys) {
-  Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" -Name $key -Value 0
+  Set-RegItem -PathWithName "HKLM:\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\ContentDeliveryManager\$key" -Value 0
 }
 
 Write-Output "Removing Chat/Teams icon from taskbar"
-New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Chat" -Force | Out-Null
-Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Chat" -Name "ChatIcon" -Value 3
+Set-RegItem -PathWithName "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Chat\ChatIcon" -Value 3
 
 Write-Output "Disabling Content Delivery Manager"
-New-Item -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" -Force | Out-Null
-Set-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager" -Name "SilentInstalledAppsEnabled" -Value 0
+Set-RegItem -PathWithName "HKLM:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager\SilentInstalledAppsEnabled" -Value 0
 
 Write-Output "Downloading and extracting SpaceMonger"
 Invoke-WebRequest -Uri "https://archive.org/download/spcmn140_zip/spcmn140.zip" -OutFile "C:\sm.zip"
@@ -139,6 +173,18 @@ Write-Output "Downloading and extracting RegistryChangesView"
 Invoke-WebRequest -Uri "https://www.nirsoft.net/utils/registrychangesview-x64.zip" -OutFile "C:\rcv.zip"
 Expand-Archive -Path "C:\rcv.zip" -DestinationPath "C:\" -Force
 Remove-Item "C:\rcv.zip"
+
+Write-Output "Downloading and extracting Process Monitor"
+Invoke-WebRequest -Uri "https://download.sysinternals.com/files/ProcessMonitor.zip" -OutFile "C:\processmonitor.zip"
+Expand-Archive -Path "C:\processmonitor.zip" -DestinationPath "C:\" -Force
+Remove-Item "C:\processmonitor.zip"
+
+Write-Output "Downloading virtio drivers (agent will be installed later)"
+Invoke-WebRequest -Uri "https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/latest-virtio/virtio-win-guest-tools.exe" -OutFile "C:\virtio-win-guest-tools.exe"
+& "C:\virtio-win-guest-tools.exe" /install /norestart /quiet | Out-Null
+
+Write-Output "Disabling OOBE overlay for first Administrator login"
+Set-RegItem -PathWithName "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\EnableFirstLogonAnimation" -Value 0
 
 ###
 
@@ -162,13 +208,49 @@ Get-WindowsOptionalFeature -Online |
   Select-String -NotMatch -Pattern "Restart is suppressed" |
   Out-Null
 
-Write-Output "Setting up autologin for Administrator user in the future"
-$RegPath = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
-Set-ItemProperty $RegPath "AutoAdminLogon" -Value "1" -Type String
-Set-ItemProperty $RegPath "DefaultUserName" -Value "Administrator" -Type String
-Set-ItemProperty $RegPath "DefaultPassword" -Value "" -Type String
-Set-ItemProperty $RegPath "IsConnectedAutoLogon" -Value 0 -Type DWord
-New-Item "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\PasswordLess\Device" -Force | Out-Null
-Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\PasswordLess\Device" "DevicePasswordLessBuildVersion" -Value 0 | Out-Null
+##### DEFAULT USER SETTINGS BELOW
 
-Write-Output "Rebooting and will continue into D:\boot-1.ps1 with Administrator user as per autounattend.xml"
+Write-Output "Removing OneDrive installer"
+Remove-Item "C:\Windows\System32\OneDriveSetup.exe" -Force
+New-PSDrive -PSProvider Registry -Name HKU -Root HKEY_USERS | Out-Null
+Reg Load "HKU\DefaultHive" "C:\Users\Default\NTUser.dat" | Out-Null
+if (Get-ItemProperty "HKU:\DefaultHive\Software\Microsoft\Windows\CurrentVersion\Run" | Select-Object -ExpandProperty "OneDriveSetup") {
+  Remove-ItemProperty -Path "HKU:\DefaultHive\Software\Microsoft\Windows\CurrentVersion\Run" -Name "OneDriveSetup" -Force
+}
+
+Write-Output "Disabling Smart Screen for user"
+Set-RegItem -PathWithName "HKU:\DefaultHive\Software\Microsoft\Edge\SmartScreenEnabled\(Default)" -Value 0
+Set-RegItem -PathWithName "HKU:\DefaultHive\Software\Microsoft\Windows\CurrentVersion\AppHost\EnableWebContentEvaluation" -Value 0
+Set-RegItem -PathWithName "HKU:\DefaultHive\Software\Microsoft\Windows\CurrentVersion\AppHost\PreventOverride" -Value 0
+
+Write-Output "Disabling Content Delivery Manager"
+Set-RegItem -PathWithName "HKU:\DefaultHive\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager\SilentInstalledAppsEnabled" -Value 0
+
+Write-Output "Enabling Explorer performance settings"
+Set-RegItem -PathWithName "HKLM:\SYSTEM\CurrentControlSet\Control\PriorityControl\Win32PrioritySeparation" -Value 38
+Set-RegItem -PathWithName "HKU:\DefaultHive\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects\VisualFXSetting" -Value 2
+
+Write-Output "Removing web search"
+Set-RegItem -PathWithName "HKU:\DefaultHive\Software\Policies\Microsoft\Windows\Explorer\DisableSearchBoxSuggestions" -Value 1
+
+Write-Output "Removing remaining ads"
+Set-RegItem -PathWithName "HKU:\DefaultHive\SOFTWARE\Policies\Microsoft\Windows\CloudContent\DisableWindowsConsumerFeatures" -Value 1
+
+Write-Output "Giving Explorer sensible folder view defaults"
+Set-RegItem -PathWithName "HKU:\DefaultHive\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced\HideFileExt" -Value 0
+Set-RegItem -PathWithName "HKU:\DefaultHive\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced\HideDrivesWithNoMedia" -Value 0
+Set-RegItem -PathWithName "HKU:\DefaultHive\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced\Hidden" -Value 1
+Set-RegItem -PathWithName "HKU:\DefaultHive\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced\AutoCheckSelect" -Value 0
+Set-RegItem -PathWithName "HKU:\DefaultHive\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced\ShowSuperHidden" -Value 1
+
+Write-Output "Making Explorer not combine taskbar buttons"
+Set-RegItem -PathWithName "HKU:\DefaultHive\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced\TaskbarGlomLevel" -Value 2
+
+Write-Output "Adding Run and Admin Tools to Start button"
+Set-RegItem -PathWithName "HKU:\DefaultHive\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced\Start_ShowRun" -Value 1
+Set-RegItem -PathWithName "HKU:\DefaultHive\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced\StartMenuAdminTools" -Value 1
+
+#####
+
+Write-Output "Rebooting and will continue into \\10.0.2.4\qemu\win11-init\boot-1.ps1 with Administrator user as per autounattend.xml"
+Reg Unload "HKU\DefaultHive" | Out-Null

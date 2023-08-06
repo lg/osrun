@@ -1,23 +1,31 @@
 #!/bin/ash
-#shellcheck shell=dash disable=SC3036,SC3048
+#shellcheck shell=dash disable=SC3036,SC3048,SC2002
 set -o errexit -o noclobber -o nounset -o pipefail
 
 # Parse commandline arguments
 usage() {
-  echo -e "\
-  Usage: osrun [-v] [-h] <command>\n\
-  Installs Windows 11 and runs commands in a VM.\n\n\
-  -v --verbose: Verbose mode (useful while installing)\n\
-  -p --pause: Do not close the VM after the command finishes\n\
-  -h --help: Display this help" 1>&2
+  echo -e \
+    "Usage: osrun [-v] [-h] <command>\n" \
+    "Installs Windows 11 and runs commands in a VM.\n" \
+    "\n" \
+    "  -h --help: Display this help\n" \
+    "  -v --verbose: Verbose mode\n" \
+    "\n" \
+    "Install\n" \
+    "  -k --keep: Keep the installation ISOs after successful provisioning\n" \
+    "\n" \
+    "Run\n" \
+    "  -p --pause: Do not close the VM after the command finishes\n" \
+    1>&2
+
   exit 1
 }; [ $# -eq 0 ] && usage
 
-VERBOSE=false
-PAUSE=false
-params="$(getopt -o vhp -l verbose,help,pause -n "osrun" -- "$@")"
+VERBOSE=false; PAUSE=false; KEEP_INSTALL_FILES=false
+params="$(getopt -o vhpk -l verbose,help,pause,keep -n "osrun" -- "$@")"
 eval set -- "$params"
 while true; do case "$1" in
+  -k|--keep) KEEP_INSTALL_FILES=true; shift ;;
   -v|--verbose) VERBOSE=true; shift ;;
   -p|--pause) PAUSE=true; shift ;;
   --) shift; break ;;
@@ -29,12 +37,14 @@ RUN_COMMAND="$*"
 # Windows 11 from May 2023, go to https://uupdump.net and get the link to the latest Retail Windows 11
 UUPDUMP_URL="http://uupdump.net/get.php?id=3a34d712-ee6f-46fa-991a-e7d9520c16fc&pack=en-us&edition=professional&aria2=2"
 UUPDUMP_CONVERT_SCRIPT_URL="https://github.com/uup-dump/converter/raw/073071a0003a755233c2fa74c7b6173cd7075ed7/convert.sh"
-VIRTIO_URL="https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/stable-virtio/virtio-win.iso"
 INSTALL_MEMORY_GB=8
 RUN_MEMORY_GB=4
-DEFAULT_VOLUME_PATH="/cache/win11.qcow2"
 
+# Everything logged to /tmp/qemu-status/status.txt or in Windows with `echo hello >> \\10.0.2.4\qemu\status.txt` will be
+# printed out to stdout
 mkdir -p /tmp/qemu-status
+touch /tmp/qemu-status/status.txt
+tail -f /tmp/qemu-status/status.txt &
 
 start_qemu() {
   KVM_PARAM=",accel=kvm"; CPU_PARAM="-cpu host"
@@ -43,8 +53,8 @@ start_qemu() {
     KVM_PARAM=""; CPU_PARAM="-accel tcg"
   fi
 
-  VOLUME_PATH="$DEFAULT_VOLUME_PATH"
-  while getopts 'm:o:v:' OPTION; do case "$OPTION" in
+  QEMU_OPTS=""
+  while getopts 'rm:o:v:' OPTION; do case "$OPTION" in
     m) MEMORY_GB="$OPTARG" ;;
     o) QEMU_OPTS="$OPTARG" ;;
     v) VOLUME_PATH="$OPTARG" ;;
@@ -58,12 +68,11 @@ start_qemu() {
     $CPU_PARAM \
     -smp "$(grep -c ^processor /proc/cpuinfo)" \
     -m "${MEMORY_GB:-8}G" \
-    -device virtio-balloon \
     -vga virtio \
     -device e1000,netdev=user.0 \
     -netdev user,id=user.0,smb=/tmp/qemu-status \
     \
-    -drive "file=$VOLUME_PATH,media=disk,cache=unsafe,if=virtio,format=qcow2,discard=unmap" \
+    -drive "file=$VOLUME_PATH,media=disk,cache=unsafe,if=ide,format=qcow2,discard=unmap" \
     $QEMU_OPTS \
     \
     -device qemu-xhci \
@@ -111,73 +120,68 @@ if [ ! -e /cache/win11.qcow2 ]; then
     rm -rf /tmp/win11
   fi
 
-  if [ ! -e /cache/win11-prepared.iso ]; then
-    echo -e "\033[32;49;1mDownloading virtio drivers and embedding them and init scripts Windows installer\033[0m"
-    mkdir -p /tmp/win11
-    aria2c --dir /tmp --out virtio-win.iso "$VIRTIO_URL"
-    7z x /cache/win11-clean.iso -o/tmp/win11
-    7z x /tmp/virtio-win.iso -o/tmp/win11/virtio
-    cp /win11-init/* /tmp/win11
-    cd /tmp/win11
-    genisoimage -quiet -b "boot/etfsboot.com" --no-emul-boot --eltorito-alt-boot -b "efi/microsoft/boot/efisys.bin" \
-      --no-emul-boot --udf -iso-level 3 --hide "*" -V "WIN11" -o /cache/win11-prepared.iso .
-    cd -
-    rm -rf /tmp/win11
-  fi
+  echo -e "\033[32;49;1mGenerating ISO for autounattend.xml\033[0m"
+  genisoimage -joliet -o "/tmp/autounattend.iso" -quiet /win11-init/autounattend.xml
 
   echo -e "\033[32;32;1mInstalling Windows (Logs redirected here, VNC 5950, QEMU Monitor 55556, QEMU Agent 44444)\033[0m"
+  mkdir -p /tmp/qemu-status/win11-init
+  cp /win11-init/* /tmp/qemu-status/win11-init/
 
-  # Set up direct logging with the console here. Use in Windows with: `echo hello >> \\10.0.2.4\qemu\status.txt`. Note
-  # that you might need to run `wpeinit` if you're in the Windows installer to start networking.
-  mkdir -p /tmp/qemu-status
-  touch /tmp/qemu-status/status.txt
-  tail -f /tmp/qemu-status/status.txt &
+  # The Windows installation will reboot a variety of times. This will keep the hard drive state for each reboot so you
+  # can edit the scripts and re-run the installation without having to start from scratch.
+  INIT_SCRIPTS_PATH="./win11-init"
+  STEP_FILES="autounattend.xml boot-0.ps1 boot-1.ps1"
+  for STEP in 0 1 2; do
+    STEP_FILENAME=$(echo "$STEP_FILES" | cut -d' ' -f$((STEP+1)))
+    STEP_HASH=$(echo "${PREV_STEP_HASH:-""}$(cat "$INIT_SCRIPTS_PATH/$STEP_FILENAME")" | md5sum | cut -c1-5 )
+    STEP_ARTIFACT="/cache/win11-step$STEP-$STEP_HASH.qcow2"
+    echo -e "\033[32;32mBooting, will use script $STEP_FILENAME, artifact will be: $STEP_ARTIFACT\033[0m"
 
-  if [ ! -e /cache/win11-installercopied.qcow2 ]; then
-    echo -e "\033[32;32;1mCreating temp disk image\033[0m"
-    trap 'echo -e "\033[31;49mTerminating\033[0m" ; rm -f /cache/win11-installercopied.qcow2 ; exit 1' SIGINT SIGTERM
-    qemu-img create -f qcow2 -o compression_type=zstd -q /cache/win11-installercopied.qcow2 15G
+    if [ ! -e "$STEP_ARTIFACT" ]; then
+      rm -f /cache/win11-step$STEP-*.qcow2          # remove any previous artifacts for this step
+      if [ "$STEP" = "0" ]; then
+        qemu-img create -f qcow2 -o compression_type=zstd -q "$STEP_ARTIFACT" 15G
+      else
+        cp "$PREV_STEP_ARTIFACT" "$STEP_ARTIFACT"
+      fi
 
-    echo -e "\033[32;32mBooting into Windows Setup\033[0m"
-    start_qemu -m $INSTALL_MEMORY_GB -o "-drive file=/cache/win11-prepared.iso,media=cdrom -action reboot=shutdown" \
-      -v "/cache/win11-installercopied.qcow2"
-    wait "$!"
-    trap - SIGINT SIGTERM
-  fi
+      trap 'echo -e "\033[31;49mRemoving incomplete artifact $STEP_ARTIFACT\033[0m" ; rm -f "$STEP_ARTIFACT" ; exit 1' SIGINT SIGTERM
+      start_qemu -m $INSTALL_MEMORY_GB -v "$STEP_ARTIFACT" -o "-action reboot=shutdown -drive file=/cache/win11-clean.iso,media=cdrom -drive file=/tmp/autounattend.iso,media=cdrom"
+      wait "$!" || kill -SIGINT $$
+      trap - SIGINT SIGTERM
+    fi
 
-  trap 'echo -e "\033[31;49mTerminating\033[0m" ; rm -f /cache/win11.qcow2 ; exit 1' SIGINT SIGTERM
-  if [ ! -e /cache/win11.qcow2 ]; then
-    echo -e "\033[32;32mRunning installation scripts\033[0m"
-    cp /cache/win11-installercopied.qcow2 /cache/win11.qcow2
-    start_qemu -m $INSTALL_MEMORY_GB -o "-drive file=/cache/win11-prepared.iso,media=cdrom" -v "/cache/win11.qcow2"
-    wait "$!"
-  fi
+    PREV_STEP_ARTIFACT="$STEP_ARTIFACT"
+    PREV_STEP_HASH="$STEP_HASH"
+  done
 
-  if ! grep -q "Successfully provisioned image." /tmp/qemu-status/status.txt; then
-    echo -e "\033[31;49mFailed to install Windows successfully, aborting\033[0m"
-    kill -INT $$
-  fi
-
-  echo -e "\033[32;32mCreating VM snapshot\033[0m"
-  start_qemu -m $RUN_MEMORY_GB
-  QEMU_PID=$!
-  agent_command guest-get-osinfo
-  sleep 10
+  trap 'echo -e "\033[31;49mRemoving /cache/win11.qcow2\033[0m" ; rm -f /cache/win11.qcow2 ; exit 1' SIGINT SIGTERM
+  echo -e "\033[32;32;1mCreating VM snapshot\033[0m"
+  cp "$PREV_STEP_ARTIFACT" /cache/win11.qcow2
+  start_qemu -m $RUN_MEMORY_GB -v /cache/win11.qcow2
+  QEMU_PID="$!"
+  echo -e "\033[32;32mWaiting for VM to boot one last time\033[0m"
+  agent_command guest-info > /dev/null
+  sleep 5
+  echo -e "\033[32;32mCreating snapshot and waiting for VM to stop\033[0m"
   echo -e "savevm provisioned\nq" | nc 127.0.0.1 55556
-  wait "$QEMU_PID"
+  wait "$QEMU_PID" || kill -SIGINT $$
 
-  echo -e "\033[32;49mWindows installation complete\033[0m"
+  echo -e "\033[32;32;1mWindows installation complete\033[0m"
   trap - SIGINT SIGTERM
-  rm -f /cache/win11-prepared.iso /cache/win11-installercopied.qcow2 /cache/win11-clean.iso
+  ! $KEEP_INSTALL_FILES && rm -f /cache/win11-*
 fi
 
+# The command is written to /tmp/qemu-status/run.cmd such that we don't need to worry about escaping quotes and such.
+# We use the "provisioned" snapshot stored in the qcow2 file to avoid having to wait for Windows to boot
 $VERBOSE && echo -e "\033[32;49;1mRunning \`$RUN_COMMAND\`\033[0m"
 $VERBOSE && echo -e "\033[32;49mRestoring snapshot\033[0m"
 echo -e "@ECHO OFF\nECHO OFF\n" > /tmp/qemu-status/run.cmd
 echo "$RUN_COMMAND" >> /tmp/qemu-status/run.cmd
-start_qemu -m $RUN_MEMORY_GB -o "-loadvm provisioned"
+start_qemu -m $RUN_MEMORY_GB -o "-loadvm provisioned" -v /cache/win11.qcow2
 
-# Since we resume a snapshot, we need to update the clock
+# Since we resume a snapshot, we need to update the clock. Note we wait for a 'done' file to be created in the shared
+# network drive to signal that a command has completed.
 mkdir -p /tmp/qemu-status/done
 agent_command guest-exec "{'path': 'cmd', 'arg': ['/c', 'powershell Set-Date \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\" & \
   echo done > //10.0.2.4/qemu/done/done.txt']}" > /dev/null
@@ -192,14 +196,17 @@ EXEC_START=$(agent_command guest-exec '{"path": "cmd",
   "arg": ["/c", "//10.0.2.4/qemu/run.cmd >>//10.0.2.4/qemu/out.txt 2>&1 & echo done > //10.0.2.4/qemu/done/done.txt"]}')
 PROCESS_PID=$(echo "$EXEC_START" | jq -r '.pid')
 
+# Since inotifywait was launched asynchronously, use the pid (when terminated) as the signal for `tail` below to end.
+# This tail displays the output of the command.
 $VERBOSE && echo -e "\033[32;49mWaiting for command to complete\033[0m"
-tail -n +0 -f /tmp/qemu-status/out.txt --pid "$DONE_WATCHER_PID"   # using inotify manually since tail for alpine doesn't seem to use it
+tail -n +0 -f /tmp/qemu-status/out.txt --pid "$DONE_WATCHER_PID"
+
 while true; do  # also ensure the pid ends (so we get the exit code)
   EXEC_STATUS=$(agent_command guest-exec-status '{"pid": '"$PROCESS_PID"'}')
   [ "$(echo "$EXEC_STATUS" | jq -r '.exited')" = "true" ] && break
   sleep 0.1
 done
-$PAUSE && echo -e "\033[32;49mPausing as requested\033[0m" && read -r
+$PAUSE && echo -e "\033[32;49mPausing as requested (press ENTER to exit)\033[0m" && read -r
 
 # for faster docker shutdown, intentionally not cleaning up: qemu and the /tmp/qemu-status files
 exit "$(echo "$EXEC_STATUS" | jq -r '.exitcode')"

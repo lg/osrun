@@ -18,14 +18,6 @@
       <UILanguageFallback>en-US</UILanguageFallback>
       <UserLocale>en-US</UserLocale>
     </component>
-    <component name="Microsoft-Windows-PnpCustomizationsWinPE" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-      <DriverPaths>
-        <!-- virtio driver needed for storage access -->
-        <PathAndCredentials>
-          <Path>D:\virtio\viostor\w11\amd64</Path>
-        </PathAndCredentials>
-      </DriverPaths>
-    </component>
     <component name="Microsoft-Windows-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
       <RunSynchronous>
         <!-- Disable checks since installation isn't compatible on a VM. Also on all Commands, note the 159 character limit. -->
@@ -93,7 +85,7 @@
         <RunSynchronousCommand wcm:action="add">
           <Order>1</Order>
           <Description>Running system provision script</Description>
-          <Path>cmd /c "powershell -NoLogo -ExecutionPolicy Bypass -File D:\boot-0.ps1 *>&amp;1 >> \\10.0.2.4\qemu\status.txt"</Path>
+          <Path>cmd /c "powershell -NoLogo -ExecutionPolicy Bypass -File \\10.0.2.4\qemu\win11-init\boot-0.ps1 *>&amp;1 >> \\10.0.2.4\qemu\status.txt"</Path>
         </RunSynchronousCommand>
       </RunSynchronous>
     </component>
@@ -154,7 +146,7 @@
         <SynchronousCommand>
           <Order>1</Order>
           <Description>Run script to begin configuration</Description>
-          <CommandLine>cmd /c "powershell -NoLogo -ExecutionPolicy Bypass -File D:\boot-1.ps1 2>&amp;1 >> \\10.0.2.4\qemu\status.txt"</CommandLine>
+          <CommandLine>cmd /c "powershell -NoLogo -ExecutionPolicy Bypass -File \\10.0.2.4\qemu\win11-init\boot-1.ps1 2>&amp;1 >> \\10.0.2.4\qemu\status.txt"</CommandLine>
           <RequiresUserInput>true</RequiresUserInput>
         </SynchronousCommand>
       </FirstLogonCommands>
