@@ -6,7 +6,7 @@ set -o errexit -o noclobber -o nounset -o pipefail
 usage() {
   echo -e \
     "Usage: osrun [-v] [-h] <command>\n" \
-    "Installs Windows 11 and runs commands in a VM.\n" \
+    "Short-lived containerized Windows instances\n" \
     "\n" \
     "  -h --help: Display this help\n" \
     "  -v --verbose: Verbose mode\n" \
@@ -47,7 +47,7 @@ touch /tmp/qemu-status/status.txt
 tail -f /tmp/qemu-status/status.txt &
 
 start_qemu() {
-  KVM_PARAM=",accel=kvm"; CPU_PARAM="-cpu host"
+  KVM_PARAM=",accel=kvm"; CPU_PARAM="-cpu host,hv_stimer,hv_time,hv_synic,hv_vpindex"
   if [ ! -e /dev/kvm ]; then
     echo -e "\033[33;49mKVM acceleration not found. Ensure you're using --device=/dev/kvm with docker. Virtualization will be very slow.\033[0m" > /dev/stderr
     KVM_PARAM=""; CPU_PARAM="-accel tcg"
@@ -140,7 +140,7 @@ if [ ! -e /cache/win11.qcow2 ]; then
     if [ ! -e "$STEP_ARTIFACT" ]; then
       rm -f /cache/win11-step$STEP-*.qcow2          # remove any previous artifacts for this step
       if [ "$STEP" = "0" ]; then
-        qemu-img create -f qcow2 -o compression_type=zstd -q "$STEP_ARTIFACT" 15G
+        qemu-img create -f qcow2 -o compression_type=zstd,extended_l2=on,cluster_size=128k -q "$STEP_ARTIFACT" 15G
       else
         cp "$PREV_STEP_ARTIFACT" "$STEP_ARTIFACT"
       fi

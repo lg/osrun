@@ -52,7 +52,8 @@ $executables = @(
   "c:\windows\system32\smartscreen.exe",
   "c:\windows\system32\sppsvc.exe",
   "c:\windows\system32\ctfmon.exe",
-  "c:\windows\system32\Sgrm\SgrmBroker.exe"
+  "c:\windows\system32\Sgrm\SgrmBroker.exe",
+  "c:\Program Files\Windows Defender\MpCmdRun.exe"
 )
 foreach ($executable in $executables) {
   $acl = Get-Acl $executable ; $acl.SetAccessRuleProtection($true, $true) ; Set-Acl $executable $acl
@@ -224,7 +225,18 @@ Set-RegItem -PathWithName "HKU:\DefaultHive\Software\Microsoft\Windows\CurrentVe
 Set-RegItem -PathWithName "HKU:\DefaultHive\Software\Microsoft\Windows\CurrentVersion\AppHost\PreventOverride" -Value 0
 
 Write-Output "Disabling Content Delivery Manager"
-Set-RegItem -PathWithName "HKU:\DefaultHive\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager\SilentInstalledAppsEnabled" -Value 0
+$ContentDeliveryKeys = @("ContentDeliveryAllowed", "FeatureManagementEnabled", "OemPreInstalledAppsEnabled",
+"PreInstalledAppsEnabled", "PreInstalledAppsEverEnabled", "SilentInstalledAppsEnabled", "SoftLandingEnabled",
+"SubscribedContentEnabled", "SystemPaneSuggestionsEnabled", "SubscribedContent-310093Enabled",
+"SubscribedContent-338388Enabled", "SubscribedContent-338389Enabled", "SubscribedContent-338393Enabled",
+"SubscribedContent-353694Enabled", "SubscribedContent-353696Enabled", "SubscribedContentEnabled")
+foreach ($key in $ContentDeliveryKeys) {
+  Set-RegItem -PathWithName "HKU:\DefaultHive\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager\$key" -Value 0
+}
+Set-RegItem -PathWithName "HKLM:\Software\Policies\Microsoft\PushToInstall\DisablePushToInstall" -Value 1
+Set-RegItem -PathWithName "HKLM:\Software\Policies\Microsoft\MRT\DontOfferThroughWUAU" -Value 1
+Remove-Item "HKU:\DefaultHive\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager\Subscriptions" -Force -ErrorAction SilentlyContinue
+Remove-Item "HKU:\DefaultHive\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager\SuggestedApps" -Force -ErrorAction SilentlyContinue
 
 Write-Output "Enabling Explorer performance settings"
 Set-RegItem -PathWithName "HKLM:\SYSTEM\CurrentControlSet\Control\PriorityControl\Win32PrioritySeparation" -Value 38

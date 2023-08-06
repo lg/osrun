@@ -6,22 +6,7 @@ $ErrorActionPreference = "Inquire"
 
 Write-Output "Installing QEMU agent (virtio already installed)"
 & "C:\virtio-win-guest-tools.exe" /install /quiet | Out-Null
-
-Write-Output "Waiting for all packages to be installed"
-Do {
-  Sleep 10
-  $stagedPackages = Get-AppxPackage -AllUsers | Where-Object { $_.PackageUserInformation.InstallState -ne 'Installed' }
-  Write-Output "[$(Get-Date)] Currently installing packages: $($stagedPackages.PackageFullName -join ', ')"
-} While ($stagedPackages)
-
-Write-Output "Waiting for all scheduled tasks to finish"
-Do {
-  Sleep 10
-  $runningTasks = Get-ScheduledTask | Where-Object State -NE "Disabled" | Where-Object State -NE "Ready"
-  Write-Output "[$(Get-Date)] Currently running tasks: $($runningTasks.TaskName -join ', ')"
-} While ($runningTasks)
-
-#####
+Remove-Item -Path "C:\virtio-win-guest-tools.exe" -Force | Out-Null
 
 Write-Output "Disabling all scheduled tasks with a scheduled time or idle trigger"
 Get-ScheduledTask | Where-Object State -NE "Disabled" |
@@ -33,11 +18,12 @@ Get-ScheduledTask | Where-Object State -NE "Disabled" |
   ForEach-Object { Disable-ScheduledTask -TaskName $_.TaskName -TaskPath $_.TaskPath -ErrorAction SilentlyContinue } |
   Out-Null
 
-
-#####
-
-
-
+Write-Output "Waiting for installation processes to end"
+$BadProcesses = @("msiexec", "TiWorker", "backgroundTaskHost", "TrustedInstaller")
+While ($StillRunning = ($BadProcesses | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue }).Name) {
+  Write-Output "Still running: $($StillRunning -join ', ')"
+  Sleep 30
+}
 
 #####
 
@@ -52,11 +38,18 @@ Remove-Item -Path "C:\Users\Administrator\AppData\Local\Microsoft\Windows\INetCa
 Write-Output "Removing unused windows components"
 & Dism.exe /online /Cleanup-Image /StartComponentCleanup /ResetBase | Out-Null
 
-Write-Output "Defragmenting and trimming"
-Optimize-Volume -DriveLetter C -Defrag -ReTrim -SlabConsolidate | Out-Null
-
 Write-Output "Compressing drive"
 & compact.exe /compactos:always *>&1 | Out-Null
+
+Write-Output "Defragmenting and trimming"
+Optimize-Volume -DriveLetter C -Defrag
+Optimize-Volume -DriveLetter C -ReTrim
+
+Write-Output "Final wait for installation processes to end"
+While ($StillRunning = ($BadProcesses | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue }).Name) {
+  Write-Output "Still running: $($StillRunning -join ', ')"
+  Sleep 30
+}
 
 Write-Output "Successfully provisioned image."
 
