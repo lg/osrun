@@ -1,33 +1,37 @@
 #!/bin/ash
-#shellcheck shell=dash disable=SC3036,SC3048,SC2002
+#shellcheck shell=dash disable=SC3036,SC3048,SC2002,SC3060
 set -o errexit -o noclobber -o nounset -o pipefail
 
 # Parse commandline arguments
 usage() {
   echo -e \
-    "Usage: osrun [-v] [-h] <command>\n" \
+    "Usage: osrun [flags] '<command>'\n" \
     "Short-lived containerized Windows instances\n" \
     "\n" \
     "  -h --help: Display this help\n" \
-    "  -v --verbose: Verbose mode\n" \
+    "  -v --verbose: Verbose mode (default: $VERBOSE)\n" \
     "\n" \
     "Install\n" \
-    "  -k --keep: Keep the installation ISOs after successful provisioning\n" \
+    "  -k --keep: Keep the installation ISOs after successful provisioning (default: $KEEP_INSTALL_FILES)\n" \
     "\n" \
     "Run\n" \
-    "  -p --pause: Do not close the VM after the command finishes\n" \
+    "  -p --pause: Do not close the VM after the command finishes (default: $PAUSE)\n" \
+    "  -n --new-snapshot <name>: Generate a new snapshot after the command finishes\n" \
+    "  -s --use-snapshot <name>: Restore from the specified snapshot (default: $USE_SNAPSHOT_NAME)\n" \
     1>&2
 
   exit 1
 }; [ $# -eq 0 ] && usage
 
-VERBOSE=false; PAUSE=false; KEEP_INSTALL_FILES=false
-params="$(getopt -o vhpk -l verbose,help,pause,keep -n "osrun" -- "$@")"
+VERBOSE=false; PAUSE=false; KEEP_INSTALL_FILES=false; NEW_SNAPSHOT_NAME=""; USE_SNAPSHOT_NAME="provisioned"
+params="$(getopt -o "vhpkn:s:" -l verbose,help,pause,keep,new-snapshot,use-snapshot -n "osrun" -- "$@")"
 eval set -- "$params"
 while true; do case "$1" in
   -k|--keep) KEEP_INSTALL_FILES=true; shift ;;
   -v|--verbose) VERBOSE=true; shift ;;
   -p|--pause) PAUSE=true; shift ;;
+  -n|--new-snapshot) NEW_SNAPSHOT_NAME="$2"; shift 2 ;;
+  -s|--use-snapshot) USE_SNAPSHOT_NAME="$2"; shift 2 ;;
   --) shift; break ;;
   *) usage ;;
 esac; done
@@ -163,7 +167,7 @@ if [ ! -e /cache/win11.qcow2 ]; then
   echo -e "\033[32;32mWaiting for VM to boot one last time\033[0m"
   agent_command guest-info > /dev/null
   sleep 5
-  echo -e "\033[32;32mCreating snapshot and waiting for VM to stop\033[0m"
+  echo -e "\033[32;32mCreating 'provisioned' snapshot and waiting for VM to stop\033[0m"
   echo -e "savevm provisioned\nq" | nc 127.0.0.1 55556
   wait "$QEMU_PID" || kill -SIGINT $$
 
@@ -173,12 +177,12 @@ if [ ! -e /cache/win11.qcow2 ]; then
 fi
 
 # The command is written to /tmp/qemu-status/run.cmd such that we don't need to worry about escaping quotes and such.
-# We use the "provisioned" snapshot stored in the qcow2 file to avoid having to wait for Windows to boot
-$VERBOSE && echo -e "\033[32;49;1mRunning \`$RUN_COMMAND\`\033[0m"
-$VERBOSE && echo -e "\033[32;49mRestoring snapshot\033[0m"
+# We use the "provisioned" (by default) snapshot stored in the qcow2 file to avoid having to wait for Windows to boot.
+$VERBOSE && echo -e "\033[32;49;1mRunning \`${RUN_COMMAND//\\/\\\\}\`\033[0m"
+$VERBOSE && echo -e "\033[32;49mRestoring snapshot '$USE_SNAPSHOT_NAME'\033[0m"
 echo -e "@ECHO OFF\nECHO OFF\n" > /tmp/qemu-status/run.cmd
 echo "$RUN_COMMAND" >> /tmp/qemu-status/run.cmd
-start_qemu -m $RUN_MEMORY_GB -o "-loadvm provisioned" -v /cache/win11.qcow2
+start_qemu -m $RUN_MEMORY_GB -o "-loadvm $USE_SNAPSHOT_NAME" -v /cache/win11.qcow2
 
 # Since we resume a snapshot, we need to update the clock. Note we wait for a 'done' file to be created in the shared
 # network drive to signal that a command has completed.
@@ -207,6 +211,12 @@ while true; do  # also ensure the pid ends (so we get the exit code)
   sleep 0.1
 done
 $PAUSE && echo -e "\033[32;49mPausing as requested (press ENTER to exit)\033[0m" && read -r
+
+# Optionally create a new snapshot
+if [ "$NEW_SNAPSHOT_NAME" != "" ]; then
+  $VERBOSE && echo -e "\033[32;49;1mCreating snapshot '$NEW_SNAPSHOT_NAME'\033[0m"
+  echo -e "savevm $NEW_SNAPSHOT_NAME\nq" | nc 127.0.0.1 55556
+fi
 
 # for faster docker shutdown, intentionally not cleaning up: qemu and the /tmp/qemu-status files
 exit "$(echo "$EXEC_STATUS" | jq -r '.exitcode')"
