@@ -5,7 +5,7 @@
   Reference of components: https://learn.microsoft.com/en-us/windows-hardware/customize/desktop/unattend/components-b-unattend?view=windows-11
 -->
 
-<unattend xmlns="urn:schemas-microsoft-com:unattend">
+<unattend xmlns="urn:schemas-microsoft-com:unattend" xsi:schemaLocation="urn:schemas-microsoft-com:unattend https://gist.githubusercontent.com/lg/b8723c6d6a6334e7a4aeed9c2bd54675/raw/0c6c5aa1c856209eddffb0eba07701d2ad1e8610/unattend.xsd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <!-- Windows Setup starts here after booting from the installation media. Install boot-critical drivers here. Also configure partitions and updates. -->
   <settings pass="windowsPE">
     <component name="Microsoft-Windows-International-Core-WinPE" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
