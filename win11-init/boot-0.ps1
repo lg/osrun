@@ -262,6 +262,9 @@ Write-Output "Adding Run and Admin Tools to Start button"
 Set-RegItem -PathWithName "HKU:\DefaultHive\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced\Start_ShowRun" -Value 1
 Set-RegItem -PathWithName "HKU:\DefaultHive\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced\StartMenuAdminTools" -Value 1
 
+Write-Output "Set default Edge settings"
+Set-RegItem -PathWithName "HKU:\DefaultHive\SOFTWARE\Policies\Microsoft\Edge\HideFirstRunExperience" -Value 1
+
 #####
 
 Write-Output "Rebooting and will continue into \\10.0.2.4\qemu\win11-init\boot-1.ps1 with Administrator user as per autounattend.xml"
