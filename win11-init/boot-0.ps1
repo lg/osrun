@@ -184,6 +184,11 @@ Write-Output "Downloading virtio drivers (agent will be installed later)"
 Invoke-WebRequest -Uri "https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/latest-virtio/virtio-win-guest-tools.exe" -OutFile "C:\virtio-win-guest-tools.exe"
 & "C:\virtio-win-guest-tools.exe" /install /norestart /quiet | Out-Null
 
+Write-Output "Downloading and installing Chrome (enterprise MSI)"
+Invoke-WebRequest -Uri "https://dl.google.com/dl/chrome/install/googlechromestandaloneenterprise64.msi" -OutFile "C:\chrome.msi"
+Start-Process -FilePath "msiexec.exe" -ArgumentList "/i", "C:\chrome.msi", "/quiet", "/norestart" -Wait
+Remove-Item "C:\chrome.msi"
+
 Write-Output "Disabling OOBE overlay for first Administrator login"
 Set-RegItem -PathWithName "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\EnableFirstLogonAnimation" -Value 0
 
