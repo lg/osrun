@@ -36,13 +36,21 @@ Run
   -s --use-snapshot <name>: Restore from the specified snapshot (default: provisioned)
 ```
 
-If you don't have kvm on your machine, you can skip the parameter, but things will be a lot slower. This mode is currently unreliable and may freeze during Windows 11 installation.
+## Building and running locally
+
+```bash
+# Build the container
+docker build -t osrun .
+
+# Install Windows and run a command
+docker run -it --rm --device=/dev/kvm -v $(pwd)/cache:/cache osrun 'dir "C:\Program Files"'
+```
 
 ## Protips
 
-- Take advantage of noVNC, `--verbose` and `--pause` to debug installation/execution
-- Don't forget to mount the cache directory in Docker and passthrough kvm
+- **Don't forget to mount the cache directory in Docker and passthrough kvm**
 - Use single quotes around the run command to avoid shell expansion. There is no need for double backslashes in Windows paths. Ex: `osrun 'dir "C:\Program Files"'`.
+- Take advantage of noVNC, `--verbose` and `--pause` to debug installation/execution
 - You can inspect the container state using `docker exec -it <container-id> ash`.
 - You can enter the QEMU Monitor using `docker exec -it <container-id> socat tcp:127.0.0.1:55556 readline` or just `socat tcp:127.0.0.1:55556 readline` locally if you forwarded the port.
 

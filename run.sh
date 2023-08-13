@@ -39,7 +39,7 @@ esac; done
 RUN_COMMAND="$*"
 
 if [ -e "/cache/not-forwarded" ]; then
-  echo -e "\033[33;49mWARNING: /cache is not mounted. Windows will need to be rebuilt every time. This is not " \
+  echo -e "\033[33;49mWARNING: /cache is not mounted. Windows will need to be rebuilt every time. This is not" \
     "recommended! Forward this path to the local machine, ex: \`-v \$(pwd)/cache:/cache\`\033[0m" > /dev/stderr
 fi
 
