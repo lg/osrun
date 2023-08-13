@@ -1,6 +1,6 @@
 # boot-0: This script is run as the SYSTEM user on the first boot post-installer. System will reboot automatically on completion.
 $ErrorActionPreference = "Inquire"
-$ProgressPreference = 'SilentlyContinue'
+$ProgressPreference = "SilentlyContinue"
 
 function Set-RegItem {
   param ([Parameter(Mandatory=$true)] [string]$PathWithName, [Parameter(Mandatory=$true)] $Value)
@@ -39,9 +39,11 @@ Get-ScheduledTask -TaskPath '\Microsoft\Windows\Windows Defender*' | Disable-Sch
 Get-ScheduledTask -TaskPath '\Microsoft\Windows\WindowsUpdate*' | Disable-ScheduledTask | Out-Null
 Get-ScheduledTask -TaskPath '\' -TaskName 'MicrosoftEdgeUpdate*' | Disable-ScheduledTask | Out-Null
 
-Write-Output "Disabling Edge Update for future"
+Write-Output "Uninstalling Edge and disabling its automatic reinstall"
 Set-RegItem -PathWithName "HKLM:\SOFTWARE\Microsoft\EdgeUpdate\DoNotUpdateToEdgeWithChromium" -Value 1
-Remove-Item "C:\Program Files (x86)\Microsoft\EdgeUpdate\MicrosoftEdgeUpdate.exe" -Force | Out-Null
+Get-Process "*Edge*" | Stop-Process -Force
+Start-Process -FilePath "C:\Program Files (x86)\Microsoft\Edge\Application\*\Installer\setup.exe" -ArgumentList "--uninstall", "--system-level", "--verbose-logging", "--force-uninstall" -Wait
+Remove-Item "C:\Program Files (x86)\Microsoft\Edge*" -Recurse -Force
 
 Write-Output "Disabling Smart Screen"
 Set-RegItem -PathWithName "HKLM:\SOFTWARE\Policies\Microsoft\Windows\System\EnableSmartScreen" -Value 0
@@ -185,6 +187,7 @@ Invoke-WebRequest -Uri "https://fedorapeople.org/groups/virt/virtio-win/direct-d
 & "C:\virtio-win-guest-tools.exe" /install /norestart /quiet | Out-Null
 
 Write-Output "Downloading and installing Chrome (enterprise MSI)"
+Set-RegItem -PathWithName "HKLM:\SOFTWARE\Policies\Google\Update\UpdateDefault" -Value 0
 Invoke-WebRequest -Uri "https://dl.google.com/dl/chrome/install/googlechromestandaloneenterprise64.msi" -OutFile "C:\chrome.msi"
 Start-Process -FilePath "msiexec.exe" -ArgumentList "/i", "C:\chrome.msi", "/quiet", "/norestart" -Wait
 Remove-Item "C:\chrome.msi"
@@ -266,9 +269,6 @@ Set-RegItem -PathWithName "HKU:\DefaultHive\Software\Microsoft\Windows\CurrentVe
 Write-Output "Adding Run and Admin Tools to Start button"
 Set-RegItem -PathWithName "HKU:\DefaultHive\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced\Start_ShowRun" -Value 1
 Set-RegItem -PathWithName "HKU:\DefaultHive\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced\StartMenuAdminTools" -Value 1
-
-Write-Output "Set default Edge settings"
-Set-RegItem -PathWithName "HKU:\DefaultHive\SOFTWARE\Policies\Microsoft\Edge\HideFirstRunExperience" -Value 1
 
 #####
 
