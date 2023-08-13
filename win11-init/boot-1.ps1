@@ -18,9 +18,10 @@ Get-ScheduledTask | Where-Object State -NE "Disabled" |
   ForEach-Object { Disable-ScheduledTask -TaskName $_.TaskName -TaskPath $_.TaskPath -ErrorAction SilentlyContinue } |
   Out-Null
 
-Write-Output "Waiting for installation processes to end"
+Write-Output "Waiting for active installation processes to end"
 $BadProcesses = @("msiexec", "TiWorker", "backgroundTaskHost", "TrustedInstaller")
-While ($StillRunning = ($BadProcesses | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue }).Name) {
+While ($StillRunning = ($BadProcesses | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue |
+    Where-Object { $_.Threads.Count -ne $_.Threads.Where({ $_.WaitReason -eq "Suspended" }).Count }} ).Name) {
   Write-Output "Still running: $($StillRunning -join ', ')"
   Sleep 30
 }
@@ -46,7 +47,8 @@ Optimize-Volume -DriveLetter C -Defrag
 Optimize-Volume -DriveLetter C -ReTrim
 
 Write-Output "Final wait for installation processes to end"
-While ($StillRunning = ($BadProcesses | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue }).Name) {
+While ($StillRunning = ($BadProcesses | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue |
+    Where-Object { $_.Threads.Count -ne $_.Threads.Where({ $_.WaitReason -eq "Suspended" }).Count }} ).Name) {
   Write-Output "Still running: $($StillRunning -join ', ')"
   Sleep 30
 }
