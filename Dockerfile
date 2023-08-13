@@ -6,6 +6,6 @@ RUN apk add --no-cache --repository=https://dl-cdn.alpinelinux.org/alpine/edge/t
   qemu-system-x86_64 qemu-hw-display-virtio-vga qemu-img samba socat websocat 7zip jq coreutils inotify-tools novnc \
   aria2 wimlib cabextract bash chntpw cdrkit \
   && mkdir -p /cache/not-forwarded
-COPY run.sh /run.sh
+COPY osrun /osrun
 COPY win11-init /win11-init
-ENTRYPOINT ["/run.sh"]
+ENTRYPOINT ["/osrun"]
