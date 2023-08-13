@@ -50,6 +50,9 @@ mkdir -p /tmp/qemu-status
 touch /tmp/qemu-status/status.txt
 tail -f /tmp/qemu-status/status.txt &
 
+# Start the novnc webserver (basically just an http server and a websocket proxy to qemu's vnc websocket)
+novnc_server --listen 8000 --vnc 127.0.0.1:5950 > /dev/null 2>&1 &
+
 start_qemu() {
   KVM_PARAM=",accel=kvm"; CPU_PARAM="-cpu host,hv_stimer,hv_time,hv_synic,hv_vpindex"
   if [ ! -e /dev/kvm ]; then
@@ -127,7 +130,7 @@ if [ ! -e /cache/win11.qcow2 ]; then
   echo -e "\033[32;49;1mGenerating ISO for autounattend.xml\033[0m"
   genisoimage -joliet -o "/tmp/autounattend.iso" -quiet /win11-init/autounattend.xml
 
-  echo -e "\033[32;32;1mInstalling Windows (Logs redirected here, VNC 5950, QEMU Monitor 55556, QEMU Agent 44444)\033[0m"
+  echo -e "\033[32;32;1mInstalling Windows (Logs redirected here, noVNC at: http://localhost:8000/vnc.html)\033[0m"
   mkdir -p /tmp/qemu-status/win11-init
   cp /win11-init/* /tmp/qemu-status/win11-init/
 
@@ -178,7 +181,7 @@ fi
 
 # The command is written to /tmp/qemu-status/run.cmd such that we don't need to worry about escaping quotes and such.
 # We use the "provisioned" (by default) snapshot stored in the qcow2 file to avoid having to wait for Windows to boot.
-$VERBOSE && echo -e "\033[32;49;1mRunning \`${RUN_COMMAND//\\/\\\\}\`\033[0m"
+$VERBOSE && echo -e "\033[32;49;1mRunning \`${RUN_COMMAND//\\/\\\\}\` (Output redirected here, noVNC at http://localhost:8000/vnc.html, use --pause to not exit)\033[0m\033[0m"
 $VERBOSE && echo -e "\033[32;49mRestoring snapshot '$USE_SNAPSHOT_NAME'\033[0m"
 echo -e "@ECHO OFF\nECHO OFF\n" > /tmp/qemu-status/run.cmd
 echo "$RUN_COMMAND" >> /tmp/qemu-status/run.cmd
@@ -210,7 +213,7 @@ while true; do  # also ensure the pid ends (so we get the exit code)
   [ "$(echo "$EXEC_STATUS" | jq -r '.exited')" = "true" ] && break
   sleep 0.1
 done
-$PAUSE && echo -e "\033[32;49mPausing as requested (press ENTER to exit)\033[0m" && read -r
+$PAUSE && echo -e "\033[32;49mPausing as requested (noVNC at http://localhost:8000/vnc.html, press ENTER to exit)\033[0m" && read -r
 
 # Optionally create a new snapshot
 if [ "$NEW_SNAPSHOT_NAME" != "" ]; then

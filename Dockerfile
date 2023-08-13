@@ -2,9 +2,10 @@
 
 FROM --platform=linux/amd64 alpine:3.18
 
-RUN apk add --no-cache qemu-system-x86_64 qemu-hw-display-virtio-vga qemu-img samba socat websocat 7zip jq coreutils \
-  inotify-tools \
-  aria2 wimlib cabextract bash chntpw cdrkit
+RUN apk add --no-cache --repository=https://dl-cdn.alpinelinux.org/alpine/edge/testing \
+  qemu-system-x86_64 qemu-hw-display-virtio-vga qemu-img samba socat websocat 7zip jq coreutils inotify-tools novnc \
+  aria2 wimlib cabextract bash chntpw cdrkit \
+  && mkdir -p /cache/not-forwarded
 COPY run.sh /run.sh
 COPY win11-init /win11-init
 ENTRYPOINT ["/run.sh"]

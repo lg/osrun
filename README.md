@@ -1,6 +1,6 @@
 # osrun
 
-A docker container to run Windows commands and processes. On first run it will generate a Windows 11 ISO and run a VM to install it and create a system snapshot. On subsequent runs it will use the existing cached VM image.
+A docker container to run Windows commands and processes. On first run it will generate a Windows 11 ISO and run a VM to install it and create a system snapshot. On subsequent runs it will use the existing cached VM image to run the command passed in. noVNC is available on port 8000 (when forwarded via Docker) to view the VM's display.
 
 ## Usage
 
@@ -38,9 +38,17 @@ Run
 
 If you don't have kvm on your machine, you can skip the parameter, but things will be a lot slower. This mode is currently unreliable and may freeze during Windows 11 installation.
 
+## Protips
+
+- Take advantage of noVNC, `--verbose` and `--pause` to debug installation/execution
+- Don't forget to mount the cache directory in Docker and passthrough kvm
+- Use single quotes around the run command to avoid shell expansion. There is no need for double backslashes in Windows paths. Ex: `osrun 'dir "C:\Program Files"'`.
+- You can inspect the container state using `docker exec -it <container-id> ash`.
+- You can enter the QEMU Monitor using `docker exec -it <container-id> socat tcp:127.0.0.1:55556 readline` or just `socat tcp:127.0.0.1:55556 readline` locally if you forwarded the port.
+
 ## Details
 
-This container uses [QEMU](https://www.qemu.org/) to run a Windows 11 VM. Windows 11 is built with the file list from [UUP dump](https://uupdump.net/) and files are downloaded directly from Microsoft's Windows Update servers. The UUP dump script generates a Windows ISO which we then inject an `autounattend.xml` script to start the installation automation. To keep the resultant VM small and fast we remove a lot of the default Windows components and services including Windows Defender, Windows Update, most default apps, and also disable things like paging, sleep and hibernation, plus the hard drive is compressed and trimmed to be <10GB. THese are the files in the `win11-init` directory. This image and VM state is then snapshotted and saved to a cache directory so that subsequent runs can use the cached VM state to startup quickly. On a reasonably fast machine the installation process takes about 20 minutes end-to-end and runs take about 3-4 seconds for simple commands like `dir`.
+This container uses [QEMU](https://www.qemu.org/) to run a Windows 11 VM. Windows 11 is built with the file list from [UUP dump](https://uupdump.net/) and files are downloaded directly from Microsoft's Windows Update servers. The [UUP dump script](https://github.com/uup-dump/converter) generates a Windows ISO into which we then add an `autounattend.xml` script to start the installation automation. To keep the resultant VM small and fast we remove a lot of the default Windows components and services including Windows Defender, Windows Update, Edge, most default apps, and also disable things like paging, sleep and hibernation, plus the hard drive is compressed and trimmed to be <10GB. This process is done by the files in the `win11-init` directory. This image and VM state is then snapshotted when the system is stable and is saved to a cache directory so that subsequent runs start quickly. On a reasonably modern machine the installation process takes about 20 minutes end-to-end and runs take about 3-4 seconds for simple commands like `dir`.
 
 ```mermaid
 flowchart LR
@@ -55,6 +63,8 @@ flowchart LR
   end
 
   subgraph ZA["Installation process"]
+    B-1["noVNC started on port 8000 for debugging"]
+    -->
     B["Setup runs autounattend.xml"]
     --Artifact saved: /cache/win11-step0-HASH.qcow2-->
     B1["boot-0.ps1 as NT AUTHORITY/SYSTEM"]
@@ -68,6 +78,8 @@ flowchart LR
 
   subgraph ZB["Running"]
     C["Command written to /tmp/qemu-status/run.cmd"]
+    -->
+    C0["noVNC started on port 8000 for debugging"]
     -->
     C1["QEMU snapshot restored"]
     --/tmp/qemu-status mounted as \\10.0.2.4\QEMU in Windows-->
@@ -84,41 +96,46 @@ flowchart LR
   ZA-->ZB
 ```
 
-Communication between the VM and the host is done via the QEMU Agent and a QEMU-started Samba server (available in the host container in `/tmp/qemu-status` or in the VM in `\\10.0.2.4\qemu`). During installation and execution, multiple debugging services are started (you'll need to forward these ports using Docker if you want to use them):
-- a QEMU-run VNC server is available on port `5950` (not compatible with Apple Screen Sharing),
-- the QEMU Monitor is available on port `55556` (supported commands are [here](https://qemu-project.gitlab.io/qemu/system/monitor.html)), and
-- the QEMU Agent is available on port `44444` (protocol is [here](https://qemu.readthedocs.io/en/latest/interop/qemu-ga-ref.html)).
+Communication between the QEMU VM and the Docker container is done via the QEMU Agent and a QEMU-started Samba server (available in the host container in `/tmp/qemu-status` or in the VM in `\\10.0.2.4\qemu`). During installation and execution, multiple debugging services are started (you'll need to forward these ports using Docker if you want to use them outside the container):
+- a noVNC HTTP server is started on port `8000` to view the VM's display,
+- the raw QEMU-run VNC server is also available on port `5950` (not compatible with Apple Screen Sharing) if you don't prefer noVNC,
+- the QEMU Monitor (ie. command-line interface) is available on port `55556` (supported commands are [here](https://qemu-project.gitlab.io/qemu/system/monitor.html)), and
+- the QEMU Guest Agent is available on port `44444` (its JSON protocol is [here](https://qemu.readthedocs.io/en/latest/interop/qemu-ga-ref.html)).
 
 ```mermaid
 flowchart LR
-  subgraph "Docker Container"
-    subgraph "QEMU VM"
-      A[["\\10.0.2.4\qemu"]]
-      D["virtio display"]
-      I["QEMU Agent"]
-      A<--When running---N[["\\10.0.2.4\qemu\done"]]
-      A<--When installing---O[["\\10.0.2.4\qemu\status.txt"]]
-      A<--When running---P[["\\10.0.2.4\qemu\out.txt"]]
+  subgraph "Host machine"
+    subgraph "Docker Container"
+      subgraph "QEMU VM"
+        A[["\\10.0.2.4\qemu"]]
+        D["virtio display"]
+        I["QEMU Agent"]
+        A<--When installing---O[["\\10.0.2.4\qemu\status.txt"]]
+        A<--When running---P[["\\10.0.2.4\run.cmd<br/>\\10.0.2.4\qemu\out.txt<br/>\\10.0.2.4\qemu\done"]]
+      end
+
+      A<-->B[["/tmp/qemu-status"]]
+      D-->E["QEMU VNC server"]
+      G["QEMU Monitor"]
+      K[["/cache"]]
+      L[["/win11-init/*.ps1"]]-.Mounted on Install.->A
+      E-.Port 5950.->R["HTTP server w/ websockets proxy"]
     end
 
-    A<-->B[["/tmp/qemu-status"]]
-    D-->E["QEMU VNC server"]
-    G["QEMU Monitor"]
-    K[["/cache"]]
-    L[["/win11-init/*.ps1"]]<-.Mounted on Install.->A
-  end
 
-  E-.Port 5950.->F["VNC client"]
-  G-.Port 55556.->H["QEMU Monitor client"]
-  I-.Port 44444.->J["QEMU Agent client"]
-  K<--Docker Volume-->M[["Directory"]]
+    R-.Port 8000.->Q["noVNC HTTP frontend"]
+    E-.Port 5950.->F["VNC client"]
+    G-.Port 55556.->H["QEMU Monitor client"]
+    I-.Port 44444.->J["QEMU Agent client"]
+    K--Docker Volume-->M[["Directory"]]
+  end
 ```
 
 ### The `--new-snapshot` and `--use-snapshot` flags
 
-While the final image will always have a `provisioned` snapshot, you can create new snapshots using the `--new-snapshot` flag. This will create a new snapshot with the specified name after the command you ran finishes. You can then use this snapshot for subsequent runs using the `--use-snapshot` flag. This is useful if you need to change configuration or install a tool (ex. Chrome) on top of the base `provisioned` snapshot and start from that state (using `--use-snapshot`). Behind the scenes this uses the `savevm` and `loadvm` commands on the QEMU Monitor protocol which snapshots memory and disk state into the main qcow2 image.
+While the final image will always have a `provisioned` snapshot, you can create new snapshots from the VM end-state of your command using the `--new-snapshot <name>` flag. You can then use this snapshot for subsequent runs using the `--use-snapshot <name>` flag. This is useful if you need to change the VM's configuration or install a tool on top of the base `provisioned` snapshot. Behind the scenes this uses the `savevm` and `loadvm` commands on the QEMU Monitor protocol which snapshots memory and disk state into the main `qcow2` image.
 
-As an example:
+As an example (in order):
 
 1. `osrun --new-snapshot greeted 'mkdir C:\hello'`
     ```mermaid

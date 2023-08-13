@@ -3,5 +3,17 @@
     {
       "path": "."
     }
-  ]
+  ],
+  "settings": {
+    "remote.portsAttributes": {
+      "8000": {
+        "protocol": "http",
+        "label": "noVNC HTTP",
+        "onAutoForward": "silent"
+      }
+    }
+  },
+  "extensions": {
+    "recommendations": ["ms-vscode.powershell", "timonwong.shellcheck"]
+  }
 }
