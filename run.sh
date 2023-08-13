@@ -38,6 +38,11 @@ esac; done
 
 RUN_COMMAND="$*"
 
+if [ -e "/cache/not-forwarded" ]; then
+  echo -e "\033[33;49mWARNING: /cache is not mounted. Windows will need to be rebuilt every time. This is not " \
+    "recommended! Forward this path to the local machine, ex: \`-v \$(pwd)/cache:/cache\`\033[0m" > /dev/stderr
+fi
+
 # Windows 11 from May 2023, go to https://uupdump.net and get the link to the latest Retail Windows 11
 UUPDUMP_URL="http://uupdump.net/get.php?id=3a34d712-ee6f-46fa-991a-e7d9520c16fc&pack=en-us&edition=professional&aria2=2"
 UUPDUMP_CONVERT_SCRIPT_URL="https://github.com/uup-dump/converter/raw/073071a0003a755233c2fa74c7b6173cd7075ed7/convert.sh"
@@ -56,7 +61,8 @@ novnc_server --listen 8000 --vnc 127.0.0.1:5950 > /dev/null 2>&1 &
 start_qemu() {
   KVM_PARAM=",accel=kvm"; CPU_PARAM="-cpu host,hv_stimer,hv_time,hv_synic,hv_vpindex"
   if [ ! -e /dev/kvm ]; then
-    echo -e "\033[33;49mKVM acceleration not found. Ensure you're using --device=/dev/kvm with docker. Virtualization will be very slow.\033[0m" > /dev/stderr
+    echo -e "\033[33;49mKVM acceleration not found. Ensure you're using --device=/dev/kvm with docker. Virtualization" \
+    "will be very slow.\033[0m" > /dev/stderr
     KVM_PARAM=""; CPU_PARAM="-accel tcg"
   fi
 
@@ -67,6 +73,8 @@ start_qemu() {
     v) VOLUME_PATH="$OPTARG" ;;
     *) exit 1 ;;
   esac; done
+
+  # shellcheck disable=SC2086
   qemu-system-x86_64 \
     -name osrun \
     \
@@ -125,6 +133,8 @@ if [ ! -e /cache/win11.qcow2 ]; then
     /tmp/win11/convert.sh wim /tmp/win11 0
     mv /*PROFESSIONAL_X64_EN-US.ISO /cache/win11-clean.iso
     rm -rf /tmp/win11
+  else
+    echo -e "\033[32;32mSkipping, ISO already exists\033[0m"
   fi
 
   echo -e "\033[32;49;1mGenerating ISO for autounattend.xml\033[0m"
@@ -156,6 +166,8 @@ if [ ! -e /cache/win11.qcow2 ]; then
       start_qemu -m $INSTALL_MEMORY_GB -v "$STEP_ARTIFACT" -o "-action reboot=shutdown -drive file=/cache/win11-clean.iso,media=cdrom -drive file=/tmp/autounattend.iso,media=cdrom"
       wait "$!" || kill -SIGINT $$
       trap - SIGINT SIGTERM
+    else
+      echo -e "\033[32;32mSkipping, artifact already exists\033[0m"
     fi
 
     PREV_STEP_ARTIFACT="$STEP_ARTIFACT"
