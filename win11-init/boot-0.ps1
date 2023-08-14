@@ -22,6 +22,10 @@ $serviceName = @(
 )
 foreach ($service in $serviceName) {
   $key = "HKLM:\SYSTEM\CurrentControlSet\Services\$service"
+  if (!(Test-Path $key)) {
+    Write-Output "Waiting for service $service to get created"
+    while (!(Test-Path $key)) { Start-Sleep -Seconds 1 }
+  }
   $acl = Get-Acl $key ; $acl.SetAccessRuleProtection($true, $true) ; Set-Acl $key $acl
   $acl.Access | ForEach-Object { try { $acl.RemoveAccessRule($_) } catch {} } | Out-Null
   Set-Acl $key $acl
