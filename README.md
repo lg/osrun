@@ -4,10 +4,13 @@ A docker container to run Windows commands and processes. On first run it will g
 
 ## Usage
 
-<pre>
-<span style="filter: brightness(0.75)">docker run -it --rm --device=/dev/kvm -v $(pwd)/cache:/cache \</span>
-  ghcr.io/lg/osrun 'dir "C:\Program Files"'
-</pre>
+```bash
+# Linux
+docker run -it --rm --device=/dev/kvm -v $(pwd)/cache:/cache ghcr.io/lg/osrun 'dir "C:\Program Files"'
+
+# MacOS (installation will be very slow)
+docker run -it --rm -v $(pwd)/cache:/cache ghcr.io/lg/osrun 'dir "C:\Program Files"'
+```
 <pre style="font-size: small">
  Volume in drive C is Windows 11
  Volume Serial Number is F48D-7158
@@ -43,7 +46,7 @@ Run
 docker build -t osrun .
 
 # Install Windows and run a command
-docker run -it --rm --device=/dev/kvm -v $(pwd)/cache:/cache osrun 'dir "C:\Program Files"'
+docker run -it --rm --device=/dev/kvm -v $(pwd)/cache:/cache -p 8000:8000 osrun 'dir "C:\Program Files"'
 ```
 
 ## Protips
@@ -51,12 +54,15 @@ docker run -it --rm --device=/dev/kvm -v $(pwd)/cache:/cache osrun 'dir "C:\Prog
 - **Don't forget to mount the cache directory in Docker and passthrough kvm**
 - Use single quotes around the run command to avoid shell expansion. There is no need for double backslashes in Windows paths. Ex: `osrun 'dir "C:\Program Files"'`.
 - Take advantage of noVNC, `--verbose` and `--pause` to debug installation/execution
+- Enable auto-reconnect on noVNC and also use "Local Scaling" and "Show Dot when No Cursor"
 - You can inspect the container state using `docker exec -it <container-id> ash`.
 - You can enter the QEMU Monitor using `docker exec -it <container-id> socat tcp:127.0.0.1:55556 readline` or just `socat tcp:127.0.0.1:55556 readline` locally if you forwarded the port.
 
 ## Details
 
-This container uses [QEMU](https://www.qemu.org/) to run a Windows 11 VM. Windows 11 is built with the file list from [UUP dump](https://uupdump.net/) and files are downloaded directly from Microsoft's Windows Update servers. The [UUP dump script](https://github.com/uup-dump/converter) generates a Windows ISO into which we then add an `autounattend.xml` script to start the installation automation. To keep the resultant VM small and fast we remove a lot of the default Windows components and services including Windows Defender, Windows Update, Edge, most default apps, and also disable things like paging, sleep and hibernation, plus the hard drive is compressed and trimmed to be <10GB. This process is done by the files in the `win11-init` directory. This image and VM state is then snapshotted when the system is stable and is saved to a cache directory so that subsequent runs start quickly. On a reasonably modern machine the installation process takes about 20 minutes end-to-end and runs take about 3-4 seconds for simple commands like `dir`.
+This container uses [QEMU](https://www.qemu.org/) to run a Windows 11 VM. Windows 11 is built with the file list from [UUP dump](https://uupdump.net/) and files are downloaded directly from Microsoft's Windows Update servers. The [UUP dump script](https://github.com/uup-dump/converter) generates a Windows ISO into which we then add an `autounattend.xml` script to start the installation automation. To keep the resultant VM small (~6GB) and fast we remove a lot of the default Windows components and services including Windows Defender, Windows Update, Edge, most default apps, and also disable things like paging, sleep and hibernation, plus the hard drive is compressed and trimmed. This process is done by the files in the `win11-init` directory. This image and VM state is then snapshotted when the system is stable and is saved to a cache directory so that subsequent runs start quickly.
+
+On a reasonably modern machine the installation process takes about 20 minutes end-to-end and runs take about 3-4 seconds for simple commands like `dir`. Without KVM expect the installation to take about 2-3 hours and runs to take about 30 seconds even on fast machines like the M2 Macs.
 
 ```mermaid
 flowchart LR
@@ -79,7 +85,9 @@ flowchart LR
     --Artifact saved: /cache/win11-step1-HASH.qcow2-->
     B2["boot-1.ps1 as Administrator"]
     --Artifact saved: /cache/win11-step2-HASH.qcow2-->
-    B3["QEMU Agent waits for boot"]
+    B2.1["Artifacts joined and compressed into /cache/win11.qcow2"]
+    -->
+    B3["QEMU Agent waits for boot with /tmp/qemu-status/bootlog.txt"]
     --'provisioned' snapshot saved to /cache/win11.qcow2\nAll other artifacts removed-->
     B4["Ready to run"]
   end
@@ -118,7 +126,7 @@ flowchart LR
         A[["\\10.0.2.4\qemu"]]
         D["virtio display"]
         I["QEMU Agent"]
-        A<--When installing---O[["\\10.0.2.4\qemu\status.txt"]]
+        A<--When installing---O[["\\10.0.2.4\qemu\status.txt<br/>\\10.0.2.4\qemu\bootlog.txt"]]
         A<--When running---P[["\\10.0.2.4\run.cmd<br/>\\10.0.2.4\qemu\out.txt<br/>\\10.0.2.4\qemu\done"]]
       end
 
@@ -126,7 +134,7 @@ flowchart LR
       D-->E["QEMU VNC server"]
       G["QEMU Monitor"]
       K[["/cache"]]
-      L[["/win11-init/*.ps1"]]-.Mounted on Install.->A
+      L[["/win11-init/*.ps1"]]-.Mounted into on install.->A
       E-.Port 5950.->R["HTTP server w/ websockets proxy"]
     end
 
@@ -166,3 +174,13 @@ As an example (in order):
       A["'provisioned' snapshot restored"]
       -->B["dir executed, will not display the 'hello' directory"]
     ```
+
+### TODO
+
+- [ ] Native docker build for arm64
+- [ ] Pipe errors into the output
+- [ ] Get clipboard to work on noVNC
+- [ ] Try using the `fat:` drive protocol in QEMU to avoid the Samba server
+- [ ] Add support for Windows 10 / MacOS
+- [ ] Figure out if hvf acceleration is at all possible for MacOS
+- [ ] Support stdin into the VM

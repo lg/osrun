@@ -272,5 +272,8 @@ Set-RegItem -PathWithName "HKU:\DefaultHive\SOFTWARE\Microsoft\Windows\CurrentVe
 
 #####
 
+Write-Output "Using Run key to log future boots"
+Set-RegItem -PathWithName "HKU:\DefaultHive\Software\Microsoft\Windows\CurrentVersion\Run\bootlog" -Value "cmd /c `"powershell -NoLogo -ExecutionPolicy Bypass -Command 'get-date' 2>&1 > \\10.0.2.4\qemu\lastboot.txt & exit`""
+
 Write-Output "Rebooting and will continue into \\10.0.2.4\qemu\win11-init\boot-1.ps1 with Administrator user as per autounattend.xml"
 Reg Unload "HKU\DefaultHive" | Out-Null
