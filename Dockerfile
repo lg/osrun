@@ -1,6 +1,6 @@
 # hadolint global ignore=DL3029,DL3018
 
-FROM --platform=linux/amd64 alpine:3.18
+FROM alpine:3.18
 
 RUN apk add --no-cache --repository=https://dl-cdn.alpinelinux.org/alpine/edge/testing \
   qemu-system-x86_64 qemu-hw-display-virtio-vga qemu-img samba socat websocat 7zip jq coreutils inotify-tools novnc \
