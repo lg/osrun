@@ -43,11 +43,14 @@ if [ -e "/cache/not-forwarded" ]; then
     "recommended! Forward this path to the local machine, ex: \`-v \$(pwd)/cache:/cache\`\033[0m" > /dev/stderr
 fi
 
-# Windows 11 from May 2023, go to https://uupdump.net and get the link to the latest Retail Windows 11
-UUPDUMP_URL="http://uupdump.net/get.php?id=3a34d712-ee6f-46fa-991a-e7d9520c16fc&pack=en-us&edition=professional&aria2=2"
-UUPDUMP_CONVERT_SCRIPT_URL="https://github.com/uup-dump/converter/raw/073071a0003a755233c2fa74c7b6173cd7075ed7/convert.sh"
-INSTALL_MEMORY_GB=8
-RUN_MEMORY_GB=4
+# Windows 11 from May 2023 from https://uupdump.net and as backup https://uup.rg-adguard.net
+UUPS_URL=${UUPS_URL:-"http://uupdump.net/get.php?id=3a34d712-ee6f-46fa-991a-e7d9520c16fc&pack=en-us&edition=professional&aria2=2;https://uup.rg-adguard.net/api/GetFiles?id=3a34d712-ee6f-46fa-991a-e7d9520c16fc&lang=en-us&edition=professional&txt=yes"}
+UUPDUMP_CONVERT_SCRIPT_URL=${UUPDUMP_CONVERT_SCRIPT_URL:-"https://github.com/uup-dump/converter/raw/073071a0003a755233c2fa74c7b6173cd7075ed7/convert.sh"}
+
+INSTALL_MEMORY_GB=${INSTALL_MEMORY_GB:-8}
+RUN_MEMORY_GB=${RUN_MEMORY_GB:-4}
+INIT_SCRIPTS_PATH=${INIT_SCRIPTS_PATH:-"./win11-init"}
+STEP_FILES=${STEP_FILES:-"autounattend.xml boot-0.ps1 boot-1.ps1"}
 
 # Everything logged to /tmp/qemu-status/status.txt or in Windows with `echo hello >> \\10.0.2.4\qemu\status.txt` will be
 # printed out to stdout
@@ -123,8 +126,15 @@ provision_win11() {
   if [ ! -e /cache/win11-clean.iso ]; then
     echo -e "\033[32;49;1mDownloading Windows 11 from Windows Update\033[0m"
     mkdir -p /tmp/win11
-    aria2c --dir /tmp/win11 --out aria-script --allow-overwrite=true "$UUPDUMP_URL"
+
+    echo -e "\033[32;49mGetting file list\033[0m"
+    #shellcheck disable=SC2086
+    aria2c --dir /tmp/win11 --out aria-script --allow-overwrite=true ${UUPS_URL//;/ }
+
+    echo -e "\033[32;49mDownloading files from Windows Update\033[0m"
     aria2c --dir /tmp/win11 --input-file /tmp/win11/aria-script
+
+    echo -e "\033[32;49mConverting updates to ISO\033[0m"
     aria2c --dir /tmp/win11 --out convert.sh --allow-overwrite=true "$UUPDUMP_CONVERT_SCRIPT_URL"
     chmod +x /tmp/win11/convert.sh
 
@@ -145,10 +155,9 @@ provision_win11() {
 
   # The Windows installation will reboot a variety of times. This will keep the hard drive state for each reboot so you
   # can edit the scripts and re-run the installation without having to start from scratch.
-  INIT_SCRIPTS_PATH="./win11-init"
-  STEP_FILES="autounattend.xml boot-0.ps1 boot-1.ps1"
-  for STEP in 0 1 2; do
-    STEP_FILENAME=$(echo "$STEP_FILES" | cut -d' ' -f$((STEP+1)))
+  STEP=-1
+  for STEP_FILENAME in $STEP_FILES; do
+    STEP=$((STEP+1))
     STEP_HASH=$(echo "${PREV_STEP_HASH:-""}$(cat "$INIT_SCRIPTS_PATH/$STEP_FILENAME")" | md5sum | cut -c1-5 )
     STEP_ARTIFACT="/cache/win11-step$STEP-$STEP_HASH.qcow2"
     echo -e "\033[32;32mBooting, will use script $STEP_FILENAME, artifact will be: $STEP_ARTIFACT\033[0m"
@@ -162,7 +171,7 @@ provision_win11() {
       fi
 
       trap 'echo -e "\033[31;49mRemoving incomplete artifact $STEP_ARTIFACT\033[0m" ; rm -f "$STEP_ARTIFACT" ; exit 1' SIGINT SIGTERM
-      start_qemu -m $INSTALL_MEMORY_GB -v "$STEP_ARTIFACT" -o "-action reboot=shutdown -drive file=/cache/win11-clean.iso,media=cdrom -drive file=/tmp/autounattend.iso,media=cdrom"
+      start_qemu -m "$INSTALL_MEMORY_GB" -v "$STEP_ARTIFACT" -o "-action reboot=shutdown -drive file=/cache/win11-clean.iso,media=cdrom -drive file=/tmp/autounattend.iso,media=cdrom"
       wait "$!" || kill -SIGINT $$
       trap - SIGINT SIGTERM
     else
@@ -179,7 +188,7 @@ provision_win11() {
 
   echo -e "\033[32;32;1mCreating VM snapshot\033[0m"
   rm -f /tmp/qemu-status/lastboot.txt
-  start_qemu -m $RUN_MEMORY_GB -v /cache/win11.qcow2
+  start_qemu -m "$RUN_MEMORY_GB" -v /cache/win11.qcow2
   QEMU_PID="$!"
 
   echo -e "\033[32;32mWaiting for VM to boot and login one last time\033[0m"
@@ -206,7 +215,7 @@ $VERBOSE && echo -e "\033[32;49;1mRunning \`${RUN_COMMAND//\\/\\\\}\` (Output re
 $VERBOSE && echo -e "\033[32;49mRestoring snapshot '$USE_SNAPSHOT_NAME'\033[0m"
 echo -e "@ECHO OFF\nECHO OFF\n" > /tmp/qemu-status/run.cmd
 echo "$RUN_COMMAND" >> /tmp/qemu-status/run.cmd
-start_qemu -m $RUN_MEMORY_GB -o "-loadvm $USE_SNAPSHOT_NAME" -v /cache/win11.qcow2
+start_qemu -m "$RUN_MEMORY_GB" -o "-loadvm $USE_SNAPSHOT_NAME" -v /cache/win11.qcow2
 
 # Since we resume a snapshot, we need to update the clock. Note we wait for a 'done' file to be created in the shared
 # network drive to signal that a command has completed.
