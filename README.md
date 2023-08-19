@@ -60,7 +60,7 @@ docker run -it --rm --device=/dev/kvm -v $(pwd)/cache:/cache -p 8000:8000 osrun 
 
 ## Details
 
-This container uses [QEMU](https://www.qemu.org/) to run a Windows 11 VM. Windows 11 is built with the file list from [UUP dump](https://uupdump.net/) and files are downloaded directly from Microsoft's Windows Update servers. The [UUP dump script](https://github.com/uup-dump/converter) generates a Windows ISO into which we then add an `autounattend.xml` script to start the installation automation. To keep the resultant VM small (~6GB) and fast we remove a lot of the default Windows components and services including Windows Defender, Windows Update, Edge, most default apps, and also disable things like paging, sleep and hibernation, plus the hard drive is compressed and trimmed. This process is done by the files in the `win11-init` directory. This image and VM state is then snapshotted when the system is stable and is saved to a cache directory so that subsequent runs start quickly.
+This container uses [QEMU](https://www.qemu.org/) to run a Windows 11 VM. Windows 11 is built with the file list from [UUP dump](https://uupdump.net/) (or a backup server) and files are downloaded directly from Microsoft's Windows Update servers. The [UUP dump script](https://github.com/uup-dump/converter) generates a Windows ISO into which we then add an `autounattend.xml` script to start the installation automation. To keep the resultant VM small (~6GB) and fast we remove a lot of the default Windows components and services including Windows Defender, Windows Update, Edge, most default apps, and also disable things like paging, sleep and hibernation, plus the hard drive is compressed and trimmed. This process is done by the files in the `win11-init` directory. This image and VM state is then snapshotted when the system is stable and is saved to a cache directory so that subsequent runs start quickly.
 
 On a reasonably modern machine the installation process takes about 20 minutes end-to-end and runs take about 3-4 seconds for simple commands like `dir`. Without KVM expect the installation to take about 2-3 hours and runs to take about 30 seconds even on fast machines like the M2 Macs.
 
@@ -177,10 +177,8 @@ As an example (in order):
 
 ### TODO
 
-- [ ] Native docker build for arm64
 - [ ] Pipe errors into the output
 - [ ] Get clipboard to work on noVNC
-- [ ] Try using the `fat:` drive protocol in QEMU to avoid the Samba server
 - [ ] Add support for Windows 10 / MacOS
 - [ ] Figure out if hvf acceleration is at all possible for MacOS
 - [ ] Support stdin into the VM
