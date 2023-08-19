@@ -193,7 +193,9 @@ provision_win11() {
 
   echo -e "\033[32;32mWaiting for VM to boot and login one last time\033[0m"
   inotifywait -q -e create /tmp/qemu-status > /dev/null
-  sleep 10
+
+  echo -e "\033[32;32mWaiting for 30 seconds for system to stabilize\033[0m"
+  sleep 30
 
   echo -e "\033[32;32mCreating 'provisioned' snapshot and waiting for VM to stop\033[0m"
   echo -e "savevm provisioned\nq" | nc 127.0.0.1 55556
@@ -222,6 +224,8 @@ start_qemu -m "$RUN_MEMORY_GB" -o "-loadvm $USE_SNAPSHOT_NAME" -v /cache/win11.q
 mkdir -p /tmp/qemu-status/done
 agent_command guest-exec "{'path': 'cmd', 'arg': ['/c', 'powershell Set-Date \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\" & \
   echo done > //10.0.2.4/qemu/done/done.txt']}" > /dev/null
+
+$VERBOSE && echo -e "\033[32;49mWaiting for date sync\033[0m"
 inotifywait -q -e create /tmp/qemu-status/done > /dev/null
 rm -f /tmp/qemu-status/done/done.txt
 
