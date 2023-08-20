@@ -38,11 +38,6 @@ esac; done
 
 RUN_COMMAND="$*"
 
-if [ -e "/cache/not-forwarded" ]; then
-  echo -e "\033[33;49mWARNING: /cache is not mounted. Windows will need to be rebuilt every time. This is not" \
-    "recommended! Forward this path to the local machine, ex: \`-v \$(pwd)/cache:/cache\`\033[0m" > /dev/stderr
-fi
-
 # Windows 11 from May 2023 from https://uupdump.net and as backup https://uup.rg-adguard.net
 UUPS_URL=${UUPS_URL:-"http://uupdump.net/get.php?id=3a34d712-ee6f-46fa-991a-e7d9520c16fc&pack=en-us&edition=professional&aria2=2;https://uup.rg-adguard.net/api/GetFiles?id=3a34d712-ee6f-46fa-991a-e7d9520c16fc&lang=en-us&edition=professional&txt=yes"}
 UUPDUMP_CONVERT_SCRIPT_URL=${UUPDUMP_CONVERT_SCRIPT_URL:-"https://github.com/uup-dump/converter/raw/073071a0003a755233c2fa74c7b6173cd7075ed7/convert.sh"}
@@ -52,15 +47,6 @@ RUN_MEMORY_GB=${RUN_MEMORY_GB:-4}
 INIT_SCRIPTS_PATH=${INIT_SCRIPTS_PATH:-"./win11-init"}
 STEP_FILES=${STEP_FILES:-"autounattend.xml boot-0.ps1 boot-1.ps1"}
 
-# Everything logged to /tmp/qemu-status/status.txt or in Windows with `echo hello >> \\10.0.2.4\qemu\status.txt` will be
-# printed out to stdout
-mkdir -p /tmp/qemu-status
-touch /tmp/qemu-status/status.txt
-tail -f /tmp/qemu-status/status.txt &
-
-# Start the novnc webserver (basically just an http server and a websocket proxy to qemu's vnc websocket)
-novnc_server --listen 8000 --vnc 127.0.0.1:5950 > /dev/null 2>&1 &
-
 start_qemu() {
   KVM_PARAM=",accel=kvm"; CPU_PARAM="-cpu host,hv_stimer,hv_time,hv_synic,hv_vpindex"
   if [ ! -e /dev/kvm ]; then
@@ -69,16 +55,20 @@ start_qemu() {
     KVM_PARAM=""; CPU_PARAM="-accel tcg"
   fi
 
-  QEMU_OPTS=""
-  while getopts 'rm:o:v:' OPTION; do case "$OPTION" in
+  QEMU_OPTS=""; WAIT_PARAM="-daemonize"
+  while getopts 'wrm:o:v:' OPTION; do case "$OPTION" in
+    w) WAIT_PARAM="" ;;
     m) MEMORY_GB="$OPTARG" ;;
     o) QEMU_OPTS="$OPTARG" ;;
     v) VOLUME_PATH="$OPTARG" ;;
     *) exit 1 ;;
   esac; done
 
+  RC=0
   # shellcheck disable=SC2086
   qemu-system-x86_64 \
+    $WAIT_PARAM \
+    -pidfile /tmp/qemu-pid \
     -name osrun \
     \
     -machine "type=q35$KVM_PARAM" \
@@ -101,8 +91,10 @@ start_qemu() {
     -device virtserialport,chardev=qga0,name=org.qemu.guest_agent.0 \
     \
     -vnc 0.0.0.0:50 \
-    -monitor tcp:0.0.0.0:55556,server=on,wait=off \
-    &
+    -monitor tcp:0.0.0.0:55556,server=on,wait=off || RC=$?
+  [ "$RC" -ne "0" ] && (echo -e "\033[31;49mQEMU exited with error code $RC\033[0m" ; kill -SIGINT $$)
+  QEMU_PID=$(cat /tmp/qemu-pid 2>/dev/null || echo "")
+  return 0
 }
 
 agent_command() {
@@ -171,8 +163,7 @@ provision_win11() {
       fi
 
       trap 'echo -e "\033[31;49mRemoving incomplete artifact $STEP_ARTIFACT\033[0m" ; rm -f "$STEP_ARTIFACT" ; exit 1' SIGINT SIGTERM
-      start_qemu -m "$INSTALL_MEMORY_GB" -v "$STEP_ARTIFACT" -o "-action reboot=shutdown -drive file=/cache/win11-clean.iso,media=cdrom -drive file=/tmp/autounattend.iso,media=cdrom"
-      wait "$!" || kill -SIGINT $$
+      start_qemu -w -m "$INSTALL_MEMORY_GB" -v "$STEP_ARTIFACT" -o "-action reboot=shutdown -drive file=/cache/win11-clean.iso,media=cdrom -drive file=/tmp/autounattend.iso,media=cdrom"
       trap - SIGINT SIGTERM
     else
       echo -e "\033[32;32mSkipping, artifact already exists\033[0m"
@@ -183,13 +174,12 @@ provision_win11() {
   done
 
   trap 'echo -e "\033[31;49mRemoving /cache/win11.qcow2\033[0m" ; rm -f /cache/win11.qcow2 ; exit 1' SIGINT SIGTERM
-  echo -e "\033[32;32;1mCombining artifacts and compressing image\033[0m"
+  echo -e "\033[32;32mCombining artifacts and compressing image\033[0m"
   qemu-img convert -f qcow2 -O qcow2 -c -o compression_type=zstd,extended_l2=on,cluster_size=128k "$PREV_STEP_ARTIFACT" /cache/win11.qcow2
 
   echo -e "\033[32;32;1mCreating VM snapshot\033[0m"
   rm -f /tmp/qemu-status/lastboot.txt
   start_qemu -m "$RUN_MEMORY_GB" -v /cache/win11.qcow2
-  QEMU_PID="$!"
 
   echo -e "\033[32;32mWaiting for VM to boot and login one last time\033[0m"
   inotifywait -q -e create /tmp/qemu-status > /dev/null
@@ -199,12 +189,26 @@ provision_win11() {
 
   echo -e "\033[32;32mCreating 'provisioned' snapshot and waiting for VM to stop\033[0m"
   echo -e "savevm provisioned\nq" | nc 127.0.0.1 55556
-  wait "$QEMU_PID" || kill -SIGINT $$
+  while kill -0 "$QEMU_PID" 2>/dev/null; do sleep 0.5; done
 
   echo -e "\033[32;32;1mWindows installation complete\033[0m"
   trap - SIGINT SIGTERM
   ! $KEEP_INSTALL_FILES && rm -f /cache/win11-*
 }
+
+# Everything logged to /tmp/qemu-status/status.txt or in Windows with `echo hello >> \\10.0.2.4\qemu\status.txt` will be
+# printed out to stdout
+mkdir -p /tmp/qemu-status
+touch /tmp/qemu-status/status.txt
+tail -f /tmp/qemu-status/status.txt &
+
+# Start the novnc webserver (basically just an http server and a websocket proxy to qemu's vnc websocket)
+novnc_server --listen 8000 --vnc 127.0.0.1:5950 > /dev/null 2>&1 &
+
+if [ -e /cache/not-forwarded ]; then
+  echo -e "\033[33;49mWARNING: /cache is not mounted. Windows will need to be rebuilt every time. This is not" \
+    "recommended! Forward this path to the local machine, ex: \`-v \$(pwd)/cache:/cache\`\033[0m" > /dev/stderr
+fi
 
 if [ ! -e /cache/win11.qcow2 ]; then
   echo -e "\033[32;49;1mWindows 11 disk image is missing, going to install it now\033[0m"
