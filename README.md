@@ -28,13 +28,14 @@ Usage: osrun [flags] '<command>'
 Short-lived containerized Windows instances
 
   -h --help: Display this help
-  -v --verbose: Verbose mode (default: false)
+  -v --verbose: Verbose mode
 
 Install
-  -k --keep: Keep install artifacts after successful provisioning (default: false)
+  -k --keep: Keep install artifacts after successful provisioning
 
 Run
-  -p --pause: Do not close the VM after the command finishes (default: false)
+  -t --temp-drive: Copies drive to /tmp before running, then discards (use with a tmpfs mount)
+  -p --pause: Do not close the VM after the command finishes
   -n --new-snapshot <name>: Generate a new snapshot after the command finishes
   -s --use-snapshot <name>: Restore from the specified snapshot (default: provisioned)
 ```
@@ -55,10 +56,11 @@ This project is intended to be developed inside of VSCode. Because the KVM accel
 
 - **Don't forget to mount the cache directory in Docker and passthrough kvm**
 - Use single quotes around the run command to avoid shell expansion. There is no need for double backslashes in Windows paths. Ex: `osrun 'dir "C:\Program Files"'`.
-- Take advantage of noVNC, `--verbose` and `--pause` to debug installation/execution
-- Enable auto-reconnect on noVNC and also use "Local Scaling" and "Show Dot when No Cursor"
+- Take advantage of noVNC, `--verbose` and `--pause` to debug installation/execution.
+- Enable auto-reconnect on noVNC and also use "Local Scaling" and "Show Dot when No Cursor".
 - You can inspect the container state using `docker exec -it <container-id> ash`.
 - You can enter the QEMU Monitor using `docker exec -it <container-id> socat tcp:127.0.0.1:55556 readline` or just `socat tcp:127.0.0.1:55556 readline` locally if you forwarded the port.
+- Consider `--temp-drive` for potentially faster runs (see caveats below).
 
 ## Details
 
@@ -99,6 +101,8 @@ flowchart LR
     -->
     C0["noVNC started on port 8000 for debugging"]
     -->
+    C0.1["Image copied to /tmp if --temp-drive"]
+    -->
     C1["QEMU snapshot restored"]
     --/tmp/qemu-status mounted as \\10.0.2.4\QEMU in Windows-->
     C2["Clock set to proper time using QEMU Agent"]
@@ -136,6 +140,7 @@ flowchart LR
       D-->E["QEMU VNC server"]
       G["QEMU Monitor"]
       K[["/cache"]]
+      K-.Image copied when using temp-drive-.->K2[["/tmp/win11.qcow2"]]
       L[["/win11-init/*.ps1"]]-.Mounted into on install.->A
       E-.Port 5950.->R["HTTP server w/ websockets proxy"]
     end
@@ -148,6 +153,14 @@ flowchart LR
     K--Docker Volume-->M[["Directory"]]
   end
 ```
+
+### The `--temp-drive` flag
+
+Due to [limitations](https://bugs.launchpad.net/qemu/+bug/1184089) in QEMU, even though we load a snapshot every time the image will still get written to and will therefore grow over time. Additionally in a shared-mount scenario, only one VM will be able to access this drive at the same time due to QEMU's locking.
+
+Use `--temp-drive` to create a temporary copy the image into `/tmp` in the container before running QEMU. Though the copy can be slow, this can be leveraged with docker's `--tmpfs /tmp` flag to memory-mount this drive if you have the memory for potentially added performance depending on the workload. Be careful though, these images can get big and you may run out of memory. When not using tmpfs, docker will just use your hard drive as temporary storage and the discard the modified image at the end.
+
+*Note*: Using `--temp-drive` and `--new-snapshot` together will not update the base image unless you mount `/tmp` elsewhere and copy the drive image file back as part of another workflow.
 
 ### The `--new-snapshot` and `--use-snapshot` flags
 

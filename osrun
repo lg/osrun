@@ -9,13 +9,14 @@ usage() {
     "Short-lived containerized Windows instances\n" \
     "\n" \
     "  -h --help: Display this help\n" \
-    "  -v --verbose: Verbose mode (default: $VERBOSE)\n" \
+    "  -v --verbose: Verbose mode\n" \
     "\n" \
     "Install\n" \
-    "  -k --keep: Keep install artifacts after successful provisioning (default: $KEEP_INSTALL_FILES)\n" \
+    "  -k --keep: Keep install artifacts after successful provisioning\n" \
     "\n" \
     "Run\n" \
-    "  -p --pause: Do not close the VM after the command finishes (default: $PAUSE)\n" \
+    "  -t --temp-drive: Copies drive to /tmp before running, then discards (use with a tmpfs mount)\n" \
+    "  -p --pause: Do not close the VM after the command finishes\n" \
     "  -n --new-snapshot <name>: Generate a new snapshot after the command finishes\n" \
     "  -s --use-snapshot <name>: Restore from the specified snapshot (default: $USE_SNAPSHOT_NAME)\n" \
     1>&2
@@ -24,12 +25,14 @@ usage() {
 }; [ $# -eq 0 ] && usage
 
 VERBOSE=false; PAUSE=false; KEEP_INSTALL_FILES=false; NEW_SNAPSHOT_NAME=""; USE_SNAPSHOT_NAME="provisioned"
-params="$(getopt -o "vhpkn:s:" -l verbose,help,pause,keep,new-snapshot,use-snapshot -n "osrun" -- "$@")"
+TEMP_DRIVE=false
+params="$(getopt -o "vhtpkn:s:" -l verbose,help,pause,keep,new-snapshot,use-snapshot,temp-drive -n "osrun" -- "$@")"
 eval set -- "$params"
 while true; do case "$1" in
   -k|--keep) KEEP_INSTALL_FILES=true; shift ;;
   -v|--verbose) VERBOSE=true; shift ;;
   -p|--pause) PAUSE=true; shift ;;
+  -t|--temp-drive) TEMP_DRIVE=true; shift ;;
   -n|--new-snapshot) NEW_SNAPSHOT_NAME="$2"; shift 2 ;;
   -s|--use-snapshot) USE_SNAPSHOT_NAME="$2"; shift 2 ;;
   --) shift; break ;;
@@ -239,10 +242,18 @@ fi
 # The command is written to /tmp/qemu-status/run.cmd such that we don't need to worry about escaping quotes and such.
 # We use the "provisioned" (by default) snapshot stored in the qcow2 file to avoid having to wait for Windows to boot.
 $VERBOSE && echo -e "\033[32;49;1mRunning \`${RUN_COMMAND//\\/\\\\}\` (Output redirected here, noVNC at http://localhost:8000/vnc.html, use --pause to not exit)\033[0m\033[0m"
-$VERBOSE && echo -e "\033[32;49mRestoring snapshot '$USE_SNAPSHOT_NAME'\033[0m"
 echo -e "@ECHO OFF\nECHO OFF\n" > /tmp/qemu-status/run.cmd
 echo "$RUN_COMMAND" >> /tmp/qemu-status/run.cmd
-start_qemu -m "$RUN_MEMORY_GB" -o "-loadvm $USE_SNAPSHOT_NAME" -v /cache/win11.qcow2
+
+DRIVE_PATH="/cache/win11.qcow2"
+if $TEMP_DRIVE; then
+  $VERBOSE && echo -e "\033[32;49mCreating temp drive\033[0m"
+  cp /cache/win11.qcow2 /tmp/win11.qcow2
+  DRIVE_PATH="/tmp/win11.qcow2"
+fi
+
+$VERBOSE && echo -e "\033[32;49mRestoring snapshot '$USE_SNAPSHOT_NAME'\033[0m"
+start_qemu -m "$RUN_MEMORY_GB" -o "-loadvm $USE_SNAPSHOT_NAME" -v "$DRIVE_PATH"
 
 # Since we resume a snapshot, we need to update the clock. Note we wait for a 'done' file to be created in the shared
 # network drive to signal that a command has completed.
