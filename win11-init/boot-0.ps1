@@ -196,9 +196,9 @@ Start-Process -FilePath "msiexec.exe" -ArgumentList "/i", "C:\spice.msi", "/quie
 Remove-Item "C:\spice.msi"
 
 Write-Output "Downloading and installing Chrome (enterprise MSI)"
-Set-RegItem -PathWithName "HKLM:\SOFTWARE\Policies\Google\Update\UpdateDefault" -Value 0
 Invoke-WebRequest -Uri "https://dl.google.com/dl/chrome/install/googlechromestandaloneenterprise64.msi" -OutFile "C:\chrome.msi"
 Start-Process -FilePath "msiexec.exe" -ArgumentList "/i", "C:\chrome.msi", "/quiet", "/norestart" -Wait
+Remove-Item "C:\Program Files (x86)\Google\Update" -Recurse -Force
 Remove-Item "C:\chrome.msi"
 
 Write-Output "Disabling OOBE overlay for first Administrator login"
