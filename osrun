@@ -12,7 +12,7 @@ usage() {
     "  -v --verbose: Verbose mode (default: $VERBOSE)\n" \
     "\n" \
     "Install\n" \
-    "  -k --keep: Keep the installation ISOs after successful provisioning (default: $KEEP_INSTALL_FILES)\n" \
+    "  -k --keep: Keep install artifacts after successful provisioning (default: $KEEP_INSTALL_FILES)\n" \
     "\n" \
     "Run\n" \
     "  -p --pause: Do not close the VM after the command finishes (default: $PAUSE)\n" \
@@ -55,12 +55,24 @@ start_qemu() {
     KVM_PARAM=""; CPU_PARAM="-accel tcg"
   fi
 
-  QEMU_OPTS=""; WAIT_PARAM="-daemonize"
-  while getopts 'wrm:o:v:' OPTION; do case "$OPTION" in
+  # to have clipboard sharing work in VNC we need a spice VDAgent. but if it's a real chardev (which is required for
+  # the clipboard sharing to work) and you make a snapshot (as we do), the snapshot will fail. so the trick we do is we
+  # snapshot with a fake (or 'null') chardev, and when we restore the snapshot we use the real one. note this means that
+  # if you're making a new snapshot, you cannot have the clipboard work in that session.
+  REAL_OR_FAKE_VDAGENT_PARAM="-chardev qemu-vdagent,id=vdagent,clipboard=on"
+  if [ "$NEW_SNAPSHOT_NAME" != "" ]; then
+    $VERBOSE && echo -e "\033[33;49mWARNING: Clipboard will be disabled in VNC due to snapshotting\033[0m" > /dev/stderr
+    REAL_OR_FAKE_VDAGENT_PARAM="-chardev null,id=vdagent"
+  fi
+
+  QEMU_OPTS=""
+  WAIT_PARAM="-daemonize"
+  while getopts 'wfm:o:v:' OPTION; do case "$OPTION" in
     w) WAIT_PARAM="" ;;
     m) MEMORY_GB="$OPTARG" ;;
     o) QEMU_OPTS="$OPTARG" ;;
     v) VOLUME_PATH="$OPTARG" ;;
+    f) REAL_OR_FAKE_VDAGENT_PARAM="-chardev null,id=vdagent" ;;
     *) exit 1 ;;
   esac; done
 
@@ -89,6 +101,10 @@ start_qemu() {
     -device virtio-serial \
     -chardev socket,websocket=on,host=0.0.0.0,port=44444,server=on,wait=off,id=qga0 \
     -device virtserialport,chardev=qga0,name=org.qemu.guest_agent.0 \
+    \
+    -device virtio-serial-pci \
+    -device virtserialport,chardev=vdagent,name=com.redhat.spice.0 \
+    $REAL_OR_FAKE_VDAGENT_PARAM \
     \
     -vnc 0.0.0.0:50 \
     -monitor tcp:0.0.0.0:55556,server=on,wait=off || RC=$?
@@ -179,7 +195,7 @@ provision_win11() {
 
   echo -e "\033[32;32;1mCreating VM snapshot\033[0m"
   rm -f /tmp/qemu-status/lastboot.txt
-  start_qemu -m "$RUN_MEMORY_GB" -v /cache/win11.qcow2
+  start_qemu -m "$RUN_MEMORY_GB" -v /cache/win11.qcow2 -f
 
   echo -e "\033[32;32mWaiting for VM to boot and login one last time\033[0m"
   inotifywait -q -e create /tmp/qemu-status > /dev/null
@@ -188,12 +204,17 @@ provision_win11() {
   sleep 30
 
   echo -e "\033[32;32mCreating 'provisioned' snapshot and waiting for VM to stop\033[0m"
-  echo -e "savevm provisioned\nq" | nc 127.0.0.1 55556
+  if echo -e "savevm provisioned\nq" | nc 127.0.0.1 55556 | grep "Error"; then
+    echo -e "\033[31;49mFailed to create snapshot\033[0m" > /dev/stderr
+    kill -SIGINT $$
+  fi
   while kill -0 "$QEMU_PID" 2>/dev/null; do sleep 0.5; done
 
   echo -e "\033[32;32;1mWindows installation complete\033[0m"
   trap - SIGINT SIGTERM
-  ! $KEEP_INSTALL_FILES && rm -f /cache/win11-*
+  if ! $KEEP_INSTALL_FILES; then
+   rm -f /cache/win11-*
+  fi
 }
 
 # Everything logged to /tmp/qemu-status/status.txt or in Windows with `echo hello >> \\10.0.2.4\qemu\status.txt` will be
@@ -256,7 +277,9 @@ $PAUSE && echo -e "\033[32;49mPausing as requested (noVNC at http://localhost:80
 # Optionally create a new snapshot
 if [ "$NEW_SNAPSHOT_NAME" != "" ]; then
   $VERBOSE && echo -e "\033[32;49;1mCreating snapshot '$NEW_SNAPSHOT_NAME'\033[0m"
-  echo -e "savevm $NEW_SNAPSHOT_NAME\nq" | nc 127.0.0.1 55556
+  if echo -e "savevm $NEW_SNAPSHOT_NAME\nq" | nc 127.0.0.1 55556 | grep "Error"; then
+    echo -e "\033[31;49mFailed to create snapshot\033[0m" > /dev/stderr
+  fi
 fi
 
 # for faster docker shutdown, intentionally not cleaning up: qemu and the /tmp/qemu-status files

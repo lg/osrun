@@ -31,7 +31,7 @@ Short-lived containerized Windows instances
   -v --verbose: Verbose mode (default: false)
 
 Install
-  -k --keep: Keep the installation ISOs after successful provisioning (default: false)
+  -k --keep: Keep install artifacts after successful provisioning (default: false)
 
 Run
   -p --pause: Do not close the VM after the command finishes (default: false)
@@ -39,15 +39,17 @@ Run
   -s --use-snapshot <name>: Restore from the specified snapshot (default: provisioned)
 ```
 
-## Building and running locally
+## Developing
 
 ```bash
 # Build the container
 docker build -t osrun .
 
 # Install Windows and run a command
-docker run -it --rm --device=/dev/kvm -v $(pwd)/cache:/cache -p 8000:8000 osrun 'dir "C:\Program Files"'
+docker run -it --rm --device=/dev/kvm -v $(pwd)/cache:/cache -p 8000:8000 osrun -k -v -p 'dir "C:\Program Files"'
 ```
+
+This project is intended to be developed inside of VSCode. Because the KVM acceleration is substantial, it's suggested that you either run things on a Linux machine or use VSCode's Remote functionality to remotely develop on a Linux machine (and port forward port 8000 for noVNC).
 
 ## Protips
 
@@ -178,7 +180,6 @@ As an example (in order):
 ### TODO
 
 - [ ] Pipe errors into the output
-- [ ] Get clipboard to work on noVNC
 - [ ] Add support for Windows 10 / MacOS
 - [ ] Figure out if hvf acceleration is at all possible for MacOS
 - [ ] Support stdin into the VM

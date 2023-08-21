@@ -190,6 +190,11 @@ Write-Output "Downloading virtio drivers (agent will be installed later)"
 Invoke-WebRequest -Uri "https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/latest-virtio/virtio-win-guest-tools.exe" -OutFile "C:\virtio-win-guest-tools.exe"
 & "C:\virtio-win-guest-tools.exe" /install /norestart /quiet | Out-Null
 
+Write-Output "Downloading virtio drivers and SPICE guest tools"
+Invoke-WebRequest -Uri "https://www.spice-space.org/download/windows/vdagent/vdagent-win-0.10.0/spice-vdagent-x64-0.10.0.msi" -OutFile "C:\spice.msi"
+Start-Process -FilePath "msiexec.exe" -ArgumentList "/i", "C:\spice.msi", "/quiet", "/norestart" -Wait
+Remove-Item "C:\spice.msi"
+
 Write-Output "Downloading and installing Chrome (enterprise MSI)"
 Set-RegItem -PathWithName "HKLM:\SOFTWARE\Policies\Google\Update\UpdateDefault" -Value 0
 Invoke-WebRequest -Uri "https://dl.google.com/dl/chrome/install/googlechromestandaloneenterprise64.msi" -OutFile "C:\chrome.msi"
