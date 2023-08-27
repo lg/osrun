@@ -4,7 +4,7 @@ A docker container to run Windows commands and processes. Windows is downloaded,
 
 ## Features
 
-- ⚡️ Super fast execution once image is cached (1-2 seconds to start from snapshot)
+- ⚡️ Super fast execution once image is cached (2-3 seconds to start from snapshot)
 - 🖥️ Browser-based VNC server to view the Windows desktop (forward port 8000)
 - ⌨️ Support for interactive commands (like `cmd.exe` or `powershell.exe`) and piping output/input
 - 🖱️ GUI apps (like `notepad.exe` or `chrome.exe`) are supported
@@ -44,6 +44,7 @@ Install
   -k --keep: Keep install artifacts after successful provisioning
 
 Run
+  -f --forward-port <port>: Passes through a port to the VM (ex: 3389)
   -t --temp-drive: Copies drive to /tmp before running, then discards (use with a tmpfs mount)
   -p --pause: Do not close the VM after the command finishes
   -n --new-snapshot <name>: Generate a new snapshot after the command finishes
@@ -71,12 +72,13 @@ This project is intended to be developed inside of VSCode. Because the KVM accel
 - You can inspect the container state using `docker exec -it <container-id> ash`.
 - You can enter the QEMU Monitor using `docker exec -it <container-id> socat tcp:127.0.0.1:55556 readline` or just `socat tcp:127.0.0.1:55556 readline` locally if you forwarded the port.
 - Consider `--temp-drive` for potentially faster runs (see caveats below).
+- When using `--forward-port` for a `127.0.0.1`-bound port on the VM, you can add a proxy in Windows like the following: `echo netsh interface portproxy add v4tov4 listenaddress=10.0.2.15 listenport=YOUR_PORT connectaddress=127.0.0.1 connectport=YOUR_PORT > c:\\port.bat & start /min c:\\port.bat & YOUR_ORIGINAL_COMMAND`
 
 ## Details
 
 This container uses [QEMU](https://www.qemu.org/) to run a Windows 11 VM. Windows 11 is built with the file list from [UUP dump](https://uupdump.net/) (or a backup server) and files are downloaded directly from Microsoft's Windows Update servers. The [UUP dump script](https://github.com/uup-dump/converter) generates a Windows ISO into which we then add an `autounattend.xml` script to start the installation automation. To keep the resultant VM small (~6GB) and fast we remove a lot of the default Windows components and services including Windows Defender, Windows Update, Edge, most default apps, and also disable things like paging, sleep and hibernation, plus the hard drive is compressed and trimmed. This process is done by the files in the `win11-init` directory. This image and VM state is then snapshotted when the system is stable and is saved to a cache directory so that subsequent runs start quickly.
 
-On a reasonably modern machine the installation process takes about 20 minutes end-to-end and runs take about 1-2 seconds for simple commands like `dir`. Without KVM expect the installation to take about 2-3 hours and runs to take about 30 seconds even on fast machines like the M2 Macs.
+On a reasonably modern machine the installation process takes about 20 minutes end-to-end and runs take about 2-3 seconds for simple commands like `dir`. Without KVM expect the installation to take about 2-3 hours and runs to take about 30 seconds even on fast machines like the M2 Macs.
 
 ```mermaid
 flowchart LR
@@ -112,7 +114,7 @@ flowchart LR
     C0.1["Image copied to /tmp if --temp-drive"]
     -->
     C1["QEMU snapshot restored"]
-    --/tmp/qemu-status mounted as \\10.0.2.4\QEMU in Windows-->
+    --/tmp/qemu-status mounted as \\10.0.2.4\qemu in Windows-->
     C2["Clock set to proper time"]
     -->
     C3["Command executed using Ncat through C:\agent.bat"]

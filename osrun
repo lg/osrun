@@ -15,6 +15,7 @@ usage() {
     "  -k --keep: Keep install artifacts after successful provisioning\n" \
     "\n" \
     "Run\n" \
+    "  -f --forward-port <port>: Passes through a port to the VM (ex: 3389)\n" \
     "  -t --temp-drive: Copies drive to /tmp before running, then discards (use with a tmpfs mount)\n" \
     "  -p --pause: Do not close the VM after the command finishes\n" \
     "  -n --new-snapshot <name>: Generate a new snapshot after the command finishes\n" \
@@ -25,8 +26,8 @@ usage() {
 }; [ $# -eq 0 ] && usage
 
 VERBOSE=false; PAUSE=false; KEEP_INSTALL_FILES=false; NEW_SNAPSHOT_NAME=""; USE_SNAPSHOT_NAME="provisioned"
-TEMP_DRIVE=false
-params="$(getopt -o "vhtpkn:s:" -l verbose,help,pause,keep,new-snapshot,use-snapshot,temp-drive -n "osrun" -- "$@")"
+TEMP_DRIVE=false; FORWARD_PORTS="5454"
+params="$(getopt -o "vhtpkn:s:f:" -l verbose,help,pause,keep,new-snapshot,use-snapshot,temp-drive,forward-port -n "osrun" -- "$@")"
 eval set -- "$params"
 while true; do case "$1" in
   -k|--keep) KEEP_INSTALL_FILES=true; shift ;;
@@ -35,6 +36,7 @@ while true; do case "$1" in
   -t|--temp-drive) TEMP_DRIVE=true; shift ;;
   -n|--new-snapshot) NEW_SNAPSHOT_NAME="$2"; shift 2 ;;
   -s|--use-snapshot) USE_SNAPSHOT_NAME="$2"; shift 2 ;;
+  -f|--forward-port) FORWARD_PORTS="$FORWARD_PORTS $2"; shift 2 ;;
   --) shift; break ;;
   *) usage ;;
 esac; done
@@ -79,6 +81,11 @@ start_qemu() {
     *) exit 1 ;;
   esac; done
 
+  NET_DEV_FORWARD_PORTS_PARAM=""    # defaults to 5454 for ncat
+  for FORWARD_PORT in $FORWARD_PORTS; do
+    NET_DEV_FORWARD_PORTS_PARAM="$NET_DEV_FORWARD_PORTS_PARAM,hostfwd=tcp::${FORWARD_PORT}-:${FORWARD_PORT}"
+  done
+
   RC=0
   # shellcheck disable=SC2086
   qemu-system-x86_64 \
@@ -93,7 +100,7 @@ start_qemu() {
     -m "${MEMORY_GB:-8}G" \
     -vga virtio \
     -device e1000,netdev=user.0 \
-    -netdev user,id=user.0,smb=/tmp/qemu-status,hostfwd=tcp::5454-:5454,hostfwd=tcp::9222-:9222 \
+    -netdev user,id=user.0,smb=/tmp/qemu-status$NET_DEV_FORWARD_PORTS_PARAM \
     \
     -drive "file=$VOLUME_PATH,media=disk,cache=unsafe,if=ide,format=qcow2,discard=unmap" \
     $QEMU_OPTS \
