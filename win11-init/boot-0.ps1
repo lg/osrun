@@ -100,6 +100,9 @@ Get-ScheduledTask -TaskName "*OneDrive*" | Disable-ScheduledTask | Out-Null
 
 #####
 
+Write-Output "Disabling Windows Defender Firewall"
+Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled False
+
 Write-Output "Disabling System Restore"
 Disable-ComputerRestore -Drive "C:"
 
@@ -185,6 +188,18 @@ Write-Output "Downloading and extracting Process Monitor"
 Invoke-WebRequest -Uri "https://download.sysinternals.com/files/ProcessMonitor.zip" -OutFile "C:\processmonitor.zip"
 Expand-Archive -Path "C:\processmonitor.zip" -DestinationPath "C:\" -Force
 Remove-Item "C:\processmonitor.zip"
+
+Write-Output "Downloading and extracting PsExec"
+Invoke-WebRequest -Uri "https://download.sysinternals.com/files/PSTools.zip" -OutFile "C:\pstools.zip"
+Expand-Archive -Path "C:\pstools.zip" -DestinationPath "C:\" -Force
+Remove-Item "C:\pstools.zip"
+
+Write-Output "Downloading and extracting socat"
+Invoke-WebRequest -Uri "https://github.com/StudioEtrange/socat-windows/archive/refs/tags/1.7.2.1.zip" -OutFile "C:\socat.zip"
+Expand-Archive -Path "C:\socat.zip" -DestinationPath "C:\socat-versioned" -Force
+Remove-Item "C:\socat.zip"
+Move-Item "C:\socat-versioned\*" "C:\socat" -Force
+Remove-Item "C:\socat-versioned" -Recurse -Force
 
 Write-Output "Downloading and extracting ncat"
 Invoke-WebRequest -Uri "https://nmap.org/dist/ncat-portable-5.59BETA1.zip" -OutFile "C:\ncat.zip"
