@@ -1,5 +1,5 @@
 #!/bin/ash
-#shellcheck shell=dash disable=SC3036,SC3048,SC2002,SC3060
+#shellcheck shell=dash disable=SC3036,SC3048,SC2002,SC3060,SC3001
 set -o errexit -o noclobber -o nounset -o pipefail
 
 # Parse commandline arguments
@@ -93,7 +93,7 @@ start_qemu() {
     -m "${MEMORY_GB:-8}G" \
     -vga virtio \
     -device e1000,netdev=user.0 \
-    -netdev user,id=user.0,smb=/tmp/qemu-status \
+    -netdev user,id=user.0,smb=/tmp/qemu-status,hostfwd=tcp::5454-:5454,hostfwd=tcp::9222-:9222 \
     \
     -drive "file=$VOLUME_PATH,media=disk,cache=unsafe,if=ide,format=qcow2,discard=unmap" \
     $QEMU_OPTS \
@@ -114,20 +114,6 @@ start_qemu() {
   [ "$RC" -ne "0" ] && (echo -e "\033[31;49mQEMU exited with error code $RC\033[0m" ; kill -SIGINT $$)
   QEMU_PID=$(cat /tmp/qemu-pid 2>/dev/null || echo "")
   return 0
-}
-
-agent_command() {
-  local val; local execute; local arguments
-  execute="$1"; arguments="${2:-"{}"}"
-  val=$(echo "{\"execute\": \"$execute\", \"arguments\": $arguments}" \
-    | while ! websocat -b -n -1 ws://127.0.0.1:44444/ 2>/dev/null; do sleep 0.1; done)
-
-  if [ "$(echo "$val" | jq -r '.error')" != null ]; then
-    echo -e "\033[31;49mError running $execute$([ "$arguments" != "{}" ] && echo " ($arguments)"): $(\
-      echo "$val" | jq -r '.error.desc')\033[0m"
-    exit 1
-  fi
-  echo "$val" | jq -r '.return'
 }
 
 provision_win11() {
@@ -197,17 +183,18 @@ provision_win11() {
   qemu-img convert -f qcow2 -O qcow2 -c -o compression_type=zstd,extended_l2=on,cluster_size=128k "$PREV_STEP_ARTIFACT" /cache/win11.qcow2
 
   echo -e "\033[32;32;1mCreating VM snapshot\033[0m"
-  rm -f /tmp/qemu-status/lastboot.txt
   start_qemu -m "$RUN_MEMORY_GB" -v /cache/win11.qcow2 -f
 
   echo -e "\033[32;32mWaiting for VM to boot and login one last time\033[0m"
-  inotifywait -q -e create /tmp/qemu-status > /dev/null
+  timeout 600 sh -c 'while ! ncat -z 127.0.0.1 5454 2>/dev/null; do sleep 1; done' \
+    || (echo -e "\033[31;49mThe VM never booted to where we could connect to the agent on port 5454\033[0m" > /dev/stderr; exit 1)
 
-  echo -e "\033[32;32mWaiting for 30 seconds for system to stabilize\033[0m"
-  sleep 30
+  echo -e "\033[32;32mWaiting for system to stabilize\033[0m"
+  while echo "tasklist" | ncat 127.0.0.1 5454 | grep -E "TiWorker|msiexec|backgroundTaskHost|TrustedInstaller|dxgiadaptercache"; do sleep 2; done
+  sleep 5
 
   echo -e "\033[32;32mCreating 'provisioned' snapshot and waiting for VM to stop\033[0m"
-  if echo -e "savevm provisioned\nq" | nc 127.0.0.1 55556 | grep "Error"; then
+  if echo -e "savevm provisioned\nq" | ncat 127.0.0.1 55556 | grep "Error"; then
     echo -e "\033[31;49mFailed to create snapshot\033[0m" > /dev/stderr
     kill -SIGINT $$
   fi
@@ -239,12 +226,7 @@ if [ ! -e /cache/win11.qcow2 ]; then
   provision_win11
 fi
 
-# The command is written to /tmp/qemu-status/run.cmd such that we don't need to worry about escaping quotes and such.
-# We use the "provisioned" (by default) snapshot stored in the qcow2 file to avoid having to wait for Windows to boot.
 $VERBOSE && echo -e "\033[32;49;1mRunning \`${RUN_COMMAND//\\/\\\\}\` (Output redirected here, noVNC at http://localhost:8000/vnc.html, use --pause to not exit)\033[0m\033[0m"
-echo -e "@ECHO OFF\nECHO OFF\n" > /tmp/qemu-status/run.cmd
-echo "$RUN_COMMAND" >> /tmp/qemu-status/run.cmd
-
 DRIVE_PATH="/cache/win11.qcow2"
 if $TEMP_DRIVE; then
   $VERBOSE && echo -e "\033[32;49mCreating temp drive\033[0m"
@@ -252,46 +234,33 @@ if $TEMP_DRIVE; then
   DRIVE_PATH="/tmp/win11.qcow2"
 fi
 
+# We use the "provisioned" (by default) snapshot stored in the qcow2 file to avoid having to wait for Windows to boot.
 $VERBOSE && echo -e "\033[32;49mRestoring snapshot '$USE_SNAPSHOT_NAME'\033[0m"
 start_qemu -m "$RUN_MEMORY_GB" -o "-loadvm $USE_SNAPSHOT_NAME" -v "$DRIVE_PATH"
+$VERBOSE && echo -e "\033[32;49mWaiting for agent to respond\033[0m"
+timeout 30 sh -c 'while ! ncat -z 127.0.0.1 5454 2>/dev/null; do sleep 0.2; done' \
+  || (echo -e "\033[31;49mUnable to connect to port 5454 to issue commands\033[0m" > /dev/stderr; exit 1)
 
-# Since we resume a snapshot, we need to update the clock. Note we wait for a 'done' file to be created in the shared
-# network drive to signal that a command has completed.
-mkdir -p /tmp/qemu-status/done
-agent_command guest-exec "{'path': 'cmd', 'arg': ['/c', 'powershell Set-Date \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\" & \
-  echo done > //10.0.2.4/qemu/done/done.txt']}" > /dev/null
-
-$VERBOSE && echo -e "\033[32;49mWaiting for date sync\033[0m"
-inotifywait -q -e create /tmp/qemu-status/done > /dev/null
-rm -f /tmp/qemu-status/done/done.txt
-
+# Since we resume a snapshot, we need to update the clock. When the command finishes we receive an EOF from ncat which
+# we use to kill cat (which is keeping the pipe open). Note that this supports interactive commands (like cmd) plus also
+# desktop interactive commands (like notepad.exe). The `true` return is due to killing cat will return an error, but
+# that's just the flow.
 $VERBOSE && echo -e "\033[32;49mRunning command\033[0m"
-touch /tmp/qemu-status/out.txt
-inotifywait -q -e create /tmp/qemu-status/done > /dev/null &
-DONE_WATCHER_PID=$!
-EXEC_START=$(agent_command guest-exec '{"path": "cmd",
-  "arg": ["/c", "//10.0.2.4/qemu/run.cmd >>//10.0.2.4/qemu/out.txt 2>&1 & echo done > //10.0.2.4/qemu/done/done.txt"]}')
-PROCESS_PID=$(echo "$EXEC_START" | jq -r '.pid')
+RUN_COMMAND_WITH_DATE_SET="date $(date -u +'%m-%d-%Y') & time $(date -u +'%H:%M:%S') & $RUN_COMMAND"
+cat <(echo "$RUN_COMMAND_WITH_DATE_SET") - \
+  | ncat -vv 127.0.0.1 5454 \
+  2> >(awk '/Callback: READ EOF for/ { system("killall -INT cat"); exit }') \
+  || true
 
-# Since inotifywait was launched asynchronously, use the pid (when terminated) as the signal for `tail` below to end.
-# This tail displays the output of the command.
-$VERBOSE && echo -e "\033[32;49mWaiting for command to complete\033[0m"
-tail -n +0 -f /tmp/qemu-status/out.txt --pid "$DONE_WATCHER_PID"
-
-while true; do  # also ensure the pid ends (so we get the exit code)
-  EXEC_STATUS=$(agent_command guest-exec-status '{"pid": '"$PROCESS_PID"'}')
-  [ "$(echo "$EXEC_STATUS" | jq -r '.exited')" = "true" ] && break
-  sleep 0.1
-done
 $PAUSE && echo -e "\033[32;49mPausing as requested (noVNC at http://localhost:8000/vnc.html, press ENTER to exit)\033[0m" && read -r
 
 # Optionally create a new snapshot
 if [ "$NEW_SNAPSHOT_NAME" != "" ]; then
   $VERBOSE && echo -e "\033[32;49;1mCreating snapshot '$NEW_SNAPSHOT_NAME'\033[0m"
-  if echo -e "savevm $NEW_SNAPSHOT_NAME\nq" | nc 127.0.0.1 55556 | grep "Error"; then
+  if echo -e "savevm $NEW_SNAPSHOT_NAME\nq" | ncat 127.0.0.1 55556 | grep "Error"; then
     echo -e "\033[31;49mFailed to create snapshot\033[0m" > /dev/stderr
+    exit 1
   fi
 fi
 
 # for faster docker shutdown, intentionally not cleaning up: qemu and the /tmp/qemu-status files
-exit "$(echo "$EXEC_STATUS" | jq -r '.exitcode')"

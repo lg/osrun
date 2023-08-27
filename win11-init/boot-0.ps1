@@ -186,11 +186,18 @@ Invoke-WebRequest -Uri "https://download.sysinternals.com/files/ProcessMonitor.z
 Expand-Archive -Path "C:\processmonitor.zip" -DestinationPath "C:\" -Force
 Remove-Item "C:\processmonitor.zip"
 
+Write-Output "Downloading and extracting ncat"
+Invoke-WebRequest -Uri "https://nmap.org/dist/ncat-portable-5.59BETA1.zip" -OutFile "C:\ncat.zip"
+Expand-Archive -Path "C:\ncat.zip" -DestinationPath "C:\ncat-versioned" -Force
+Remove-Item "C:\ncat.zip"
+Move-Item "C:\ncat-versioned\*\*.exe" "C:\ncat.exe" -Force
+Remove-Item "C:\ncat-versioned" -Recurse -Force
+
 Write-Output "Downloading virtio drivers (agent will be installed later)"
 Invoke-WebRequest -Uri "https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/latest-virtio/virtio-win-guest-tools.exe" -OutFile "C:\virtio-win-guest-tools.exe"
 & "C:\virtio-win-guest-tools.exe" /install /norestart /quiet | Out-Null
 
-Write-Output "Downloading virtio drivers and SPICE guest tools"
+Write-Output "Downloading SPICE guest tools (for clipboard to work on VNC)"
 Invoke-WebRequest -Uri "https://www.spice-space.org/download/windows/vdagent/vdagent-win-0.10.0/spice-vdagent-x64-0.10.0.msi" -OutFile "C:\spice.msi"
 Start-Process -FilePath "msiexec.exe" -ArgumentList "/i", "C:\spice.msi", "/quiet", "/norestart" -Wait
 Remove-Item "C:\spice.msi"
@@ -281,8 +288,9 @@ Set-RegItem -PathWithName "HKU:\DefaultHive\SOFTWARE\Microsoft\Windows\CurrentVe
 
 #####
 
-Write-Output "Using Run key to log future boots"
-Set-RegItem -PathWithName "HKU:\DefaultHive\Software\Microsoft\Windows\CurrentVersion\Run\bootlog" -Value "cmd /c `"powershell -NoLogo -ExecutionPolicy Bypass -Command 'get-date' 2>&1 > \\10.0.2.4\qemu\lastboot.txt & exit`""
+Write-Output "Adding ncat agent to run shell commands on port 5454 to Run key"
+Set-Content -Path "C:\agent.bat" -Value "@echo off`nset /p cmd=`n%cmd% 2>&1" -Encoding ASCII
+Set-RegItem -PathWithName "HKU:\DefaultHive\Software\Microsoft\Windows\CurrentVersion\Run\ncat" -Value "cmd /c `"start /min c:\ncat.exe -vv --listen 5454 --keep-open --exec c:\agent.bat`""
 
 Write-Output "Rebooting and will continue into \\10.0.2.4\qemu\win11-init\boot-1.ps1 with Administrator user as per autounattend.xml"
 Reg Unload "HKU\DefaultHive" | Out-Null

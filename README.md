@@ -1,6 +1,16 @@
 # osrun
 
-A docker container to run Windows commands and processes. On first run it will generate a Windows 11 ISO and run a VM to install it and create a system snapshot. On subsequent runs it will use the existing cached VM image to run the command passed in. noVNC is available on port 8000 (when forwarded via Docker) to view the VM's display.
+A docker container to run Windows commands and processes. Windows is downloaded, installed, snapshotted and made available for fast access.
+
+## Features
+
+- ⚡️ Super fast execution once image is cached (1-2 seconds to start from snapshot)
+- 🖥️ Browser-based VNC server to view the Windows desktop (forward port 8000)
+- ⌨️ Support for interactive commands (like `cmd.exe` or `powershell.exe`) and piping output/input
+- 🖱️ GUI apps (like `notepad.exe` or `chrome.exe`) are supported
+- 🌍 Windows 11 is automatically downloaded and installed from Microsoft's servers
+- 📸 Snapshot support to quickly load different states
+- 🐳 All available as a convenient Docker image!
 
 ## Usage
 
@@ -66,7 +76,7 @@ This project is intended to be developed inside of VSCode. Because the KVM accel
 
 This container uses [QEMU](https://www.qemu.org/) to run a Windows 11 VM. Windows 11 is built with the file list from [UUP dump](https://uupdump.net/) (or a backup server) and files are downloaded directly from Microsoft's Windows Update servers. The [UUP dump script](https://github.com/uup-dump/converter) generates a Windows ISO into which we then add an `autounattend.xml` script to start the installation automation. To keep the resultant VM small (~6GB) and fast we remove a lot of the default Windows components and services including Windows Defender, Windows Update, Edge, most default apps, and also disable things like paging, sleep and hibernation, plus the hard drive is compressed and trimmed. This process is done by the files in the `win11-init` directory. This image and VM state is then snapshotted when the system is stable and is saved to a cache directory so that subsequent runs start quickly.
 
-On a reasonably modern machine the installation process takes about 20 minutes end-to-end and runs take about 3-4 seconds for simple commands like `dir`. Without KVM expect the installation to take about 2-3 hours and runs to take about 30 seconds even on fast machines like the M2 Macs.
+On a reasonably modern machine the installation process takes about 20 minutes end-to-end and runs take about 1-2 seconds for simple commands like `dir`. Without KVM expect the installation to take about 2-3 hours and runs to take about 30 seconds even on fast machines like the M2 Macs.
 
 ```mermaid
 flowchart LR
@@ -91,24 +101,22 @@ flowchart LR
     --Artifact saved: /cache/win11-step2-HASH.qcow2-->
     B2.1["Artifacts joined and compressed into /cache/win11.qcow2"]
     -->
-    B3["QEMU Agent waits for boot with /tmp/qemu-status/bootlog.txt"]
+    B3["Ncat Agent waits for boot"]
     --'provisioned' snapshot saved to /cache/win11.qcow2\nAll other artifacts removed-->
     B4["Ready to run"]
   end
 
   subgraph ZB["Running"]
-    C["Command written to /tmp/qemu-status/run.cmd"]
-    -->
     C0["noVNC started on port 8000 for debugging"]
     -->
     C0.1["Image copied to /tmp if --temp-drive"]
     -->
     C1["QEMU snapshot restored"]
     --/tmp/qemu-status mounted as \\10.0.2.4\QEMU in Windows-->
-    C2["Clock set to proper time using QEMU Agent"]
-    --inotify triggered on /tmp/qemu-status/done-->
-    C3["Command executed using QEMU Agent"]
-    --/tmp/qemu-status/out.txt tailed for output \nuntil inotify triggered on /tmp/qemu-status/done-->
+    C2["Clock set to proper time"]
+    -->
+    C3["Command executed using Ncat through C:\agent.bat"]
+    --stdin/stdout piped-->
     C4["New snapshot optionally created via QEMU Monitor"]
     -->
     C5["Exit code returned"]
@@ -118,11 +126,12 @@ flowchart LR
   ZA-->ZB
 ```
 
-Communication between the QEMU VM and the Docker container is done via the QEMU Agent and a QEMU-started Samba server (available in the host container in `/tmp/qemu-status` or in the VM in `\\10.0.2.4\qemu`). During installation and execution, multiple debugging services are started (you'll need to forward these ports using Docker if you want to use them outside the container):
+Communication between the QEMU VM and the Docker container is done via Netcat (ncat in particular). A variety of other options were explored like ssh, QEMU Agent, WinRM and WMIC, but most options don't make Desktop-interactivity possible (so you can't launch things like web browsers or Notepad, etc). During installation and execution, multiple debugging services are started (you'll need to forward these ports using Docker if you want to use them outside the container):
 - a noVNC HTTP server is started on port `8000` to view the VM's display,
 - the raw QEMU-run VNC server is also available on port `5950` (not compatible with Apple Screen Sharing) if you don't prefer noVNC,
-- the QEMU Monitor (ie. command-line interface) is available on port `55556` (supported commands are [here](https://qemu-project.gitlab.io/qemu/system/monitor.html)), and
-- the QEMU Guest Agent is available on port `44444` (its JSON protocol is [here](https://qemu.readthedocs.io/en/latest/interop/qemu-ga-ref.html)).
+- the QEMU Monitor (ie. command-line interface) is available on port `55556` (supported commands are [here](https://qemu-project.gitlab.io/qemu/system/monitor.html)),
+- the QEMU Guest Agent is available on port `44444` (its JSON protocol is [here](https://qemu.readthedocs.io/en/latest/interop/qemu-ga-ref.html)) and
+- the Ncat agent is available on port `5454` to send raw commandline commands.
 
 ```mermaid
 flowchart LR
@@ -130,10 +139,10 @@ flowchart LR
     subgraph "Docker Container"
       subgraph "QEMU VM"
         A[["\\10.0.2.4\qemu"]]
+        S[["C:\agent.bat"]]
         D["virtio display"]
         I["QEMU Agent"]
-        A<--When installing---O[["\\10.0.2.4\qemu\status.txt<br/>\\10.0.2.4\qemu\bootlog.txt"]]
-        A<--When running---P[["\\10.0.2.4\run.cmd<br/>\\10.0.2.4\qemu\out.txt<br/>\\10.0.2.4\qemu\done"]]
+        A<--When installing---O[["\\10.0.2.4\qemu\status.txt"]]
       end
 
       A<-->B[["/tmp/qemu-status"]]
@@ -145,7 +154,7 @@ flowchart LR
       E-.Port 5950.->R["HTTP server w/ websockets proxy"]
     end
 
-
+    P-.Port 5454.->Q["Ncat agent"]
     R-.Port 8000.->Q["noVNC HTTP frontend"]
     E-.Port 5950.->F["VNC client"]
     G-.Port 55556.->H["QEMU Monitor client"]
@@ -192,7 +201,6 @@ As an example (in order):
 
 ### TODO
 
-- [ ] Pipe errors into the output
 - [ ] Add support for Windows 10 / MacOS
 - [ ] Figure out if hvf acceleration is at all possible for MacOS
-- [ ] Support stdin into the VM
+- [ ] Add exit code and stderr support again
