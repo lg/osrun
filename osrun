@@ -248,16 +248,24 @@ $VERBOSE && echo -e "\033[32;49mWaiting for agent to respond\033[0m"
 timeout 30 sh -c 'while ! ncat -z 127.0.0.1 5454 2>/dev/null; do sleep 0.2; done' \
   || (echo -e "\033[31;49mUnable to connect to port 5454 to issue commands\033[0m" > /dev/stderr; exit 1)
 
-# Since we resume a snapshot, we need to update the clock. When the command finishes we receive an EOF from ncat which
-# we use to kill cat (which is keeping the pipe open). Note that this supports interactive commands (like cmd) plus also
-# desktop interactive commands (like notepad.exe). The `true` return is due to killing cat will return an error, but
-# that's just the flow.
+# Since we resume a snapshot, we need to update the clock for SSL and networking to work right
 $VERBOSE && echo -e "\033[32;49mRunning command\033[0m"
-RUN_COMMAND_WITH_DATE_SET="date $(date -u +'%m-%d-%Y') & time $(date -u +'%H:%M:%S') & $RUN_COMMAND"
-cat <(echo "$RUN_COMMAND_WITH_DATE_SET") - \
+FULL_COMMANDLINE="date $(date +'%m-%d-%Y') & time $(date +'%H:%M:%S') & $RUN_COMMAND"
+echo "$FULL_COMMANDLINE" > /tmp/qemu-status/command.bat
+
+# Kill the command when we get a SIGINT/SIGTERM
+echo -e "for /f \"tokens=2 delims=,\" %%i in ('wmic process where \"commandline like '\\\\10.0.2.4\\qemu\\command.bat'\" get ProcessId ^| findstr /R \"[0-9]\"') do taskkill /PID% %i" > /tmp/qemu-status/kill.bat
+trap 'echo -e "\033[31;49mTerminating command\033[0m" ; echo "\\\\10.0.2.4\\qemu\\kill.bat" | ncat 127.0.0.1 5454' SIGINT SIGTERM
+
+# Since we want to allow interactivity, after running the command we pipe STDIN (via `cat -`) into ncat. `cat -` won't
+# be able to tell when the command finishes on the VM side though, so we look at the verbose ncat output for the EOF
+# message (which IS sent from ncat) and when detected, kill cat from awk. The `true` at the end ensures execution
+# continues in this script due to the `errexit`/`pipefail` up top (since killing cat will return an error).
+cat <(echo "\\\\10.0.2.4\\qemu\\command.bat") - \
   | ncat -vv 127.0.0.1 5454 \
   2> >(awk '/Callback: READ EOF for/ { system("killall -INT cat"); exit }') \
   || true
+trap - SIGINT SIGTERM
 
 $PAUSE && echo -e "\033[32;49mPausing as requested (noVNC at http://localhost:8000/vnc.html, press ENTER to exit)\033[0m" && read -r
 
