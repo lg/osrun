@@ -253,18 +253,28 @@ $VERBOSE && echo -e "\033[32;49mRunning command\033[0m"
 FULL_COMMANDLINE="date $(date +'%m-%d-%Y') & time $(date +'%H:%M:%S') & $RUN_COMMAND"
 echo "$FULL_COMMANDLINE" > /tmp/qemu-status/command.bat
 
-# Kill the command when we get a SIGINT/SIGTERM
+# When we get a SIGINT/SIGTERM (Command+C), pass the kill through to the VM. This will get the ncat later to terminate
+# too, allowing for a clean shutdown.
 echo -e "for /f \"tokens=2 delims=,\" %%i in ('wmic process where \"commandline like '\\\\10.0.2.4\\qemu\\command.bat'\" get ProcessId ^| findstr /R \"[0-9]\"') do taskkill /PID% %i" > /tmp/qemu-status/kill.bat
 trap 'echo -e "\033[31;49mTerminating command\033[0m" ; echo "\\\\10.0.2.4\\qemu\\kill.bat" | ncat 127.0.0.1 5454' SIGINT SIGTERM
 
-# Since we want to allow interactivity, after running the command we pipe STDIN (via `cat -`) into ncat. `cat -` won't
-# be able to tell when the command finishes on the VM side though, so we look at the verbose ncat output for the EOF
-# message (which IS sent from ncat) and when detected, kill cat from awk. The `true` at the end ensures execution
-# continues in this script due to the `errexit`/`pipefail` up top (since killing cat will return an error).
-cat <(echo "\\\\10.0.2.4\\qemu\\command.bat") - \
+# If there's no STDIN present, create a virtual one so ncat doesn't exit immediately
+INPUT_SRC="-"   # default to STDIN
+if ! [ -p /dev/stdin ]; then
+  mkfifo /tmp/virtual_stdin
+  INPUT_SRC="/tmp/virtual_stdin"
+fi
+
+# Since we want to allow interactivity, after running the command we pipe STDIN into ncat. `cat` won't be able to tell
+# when the command finishes on the VM side though, so we look at the verbose ncat output for the EOF message (which IS
+# sent from ncat) and when detected, kill cat from awk. The `true` at the end ensures execution continues in this script
+# due to the `errexit`/`pipefail` up top (since killing cat will return an error).
+cat <(echo "\\\\10.0.2.4\\qemu\\command.bat") $INPUT_SRC \
   | ncat -vv 127.0.0.1 5454 \
   2> >(awk '/Callback: READ EOF for/ { system("killall -INT cat"); exit }') \
   || true
+
+rm -f /tmp/virtual_stdin
 trap - SIGINT SIGTERM
 
 $PAUSE && echo -e "\033[32;49mPausing as requested (noVNC at http://localhost:8000/vnc.html, press ENTER to exit)\033[0m" && read -r
