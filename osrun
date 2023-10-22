@@ -255,8 +255,7 @@ echo "$FULL_COMMANDLINE" > /tmp/qemu-status/command.bat
 
 # When we get a SIGINT/SIGTERM (Command+C), pass the kill through to the VM. This will get the ncat later to terminate
 # too, allowing for a clean shutdown.
-echo -e "for /f \"tokens=2 delims=,\" %%i in ('wmic process where \"commandline like '\\\\10.0.2.4\\qemu\\command.bat'\" get ProcessId ^| findstr /R \"[0-9]\"') do taskkill /PID% %i" > /tmp/qemu-status/kill.bat
-trap 'echo -e "\033[31;49mTerminating command\033[0m" ; echo "\\\\10.0.2.4\\qemu\\kill.bat" | ncat 127.0.0.1 5454' SIGINT SIGTERM
+trap 'echo -e "\033[31;49mTerminating command\033[0m" ; echo "taskkill /im ncat.exe /t /f" | ncat 127.0.0.1 5454' SIGINT SIGTERM
 
 # If there's no STDIN present, create a virtual one so ncat doesn't exit immediately
 INPUT_SRC="-"   # default to STDIN
@@ -271,7 +270,7 @@ fi
 # due to the `errexit`/`pipefail` up top (since killing cat will return an error).
 cat <(echo "\\\\10.0.2.4\\qemu\\command.bat") $INPUT_SRC \
   | ncat -vv 127.0.0.1 5454 \
-  2> >(awk '/Callback: READ EOF for/ { system("killall -INT cat"); exit }') \
+  2> >(awk '/Callback: READ EOF for/ { system("killall -TERM cat ncat >/dev/null 2>&1"); exit }') \
   || true
 
 rm -f /tmp/virtual_stdin
