@@ -6,7 +6,7 @@ A docker container to run Windows commands and processes. Windows is downloaded,
 
 - ⚡️ Super fast execution once image is cached (2-3 seconds to start from snapshot)
 - 🖥️ Browser-based VNC server to view the Windows desktop (forward port 8000)
-- ⌨️ Support for interactive commands (like `cmd.exe` or `powershell.exe`) and piping output/input
+- ⌨️ Support for interactive commands (like `cmd.exe` or `powershell.exe`) and piping stdin/stdout
 - 🖱️ GUI apps (like `notepad.exe` or `chrome.exe`) are supported
 - 🌍 Windows 11 is automatically downloaded and installed from Microsoft's servers
 - 📸 Snapshot support to quickly load different states
@@ -45,7 +45,7 @@ Install
 
 Run
   -f --forward-port <port>: Passes through a port to the VM (ex: 3389)
-  -t --temp-drive: Copies drive to /tmp before running, then discards (use with a tmpfs mount)
+  -d --drive <path>: Use the specified drive image (default: /cache/win11.qcow2)
   -p --pause: Do not close the VM after the command finishes
   -n --new-snapshot <name>: Generate a new snapshot after the command finishes
   -s --use-snapshot <name>: Restore from the specified snapshot (default: provisioned)
@@ -71,7 +71,6 @@ This project is intended to be developed inside of VSCode. Because the KVM accel
 - Enable auto-reconnect on noVNC and also use "Local Scaling" and "Show Dot when No Cursor".
 - You can inspect the container state using `docker exec -it <container-id> ash`.
 - You can enter the QEMU Monitor using `docker exec -it <container-id> socat tcp:127.0.0.1:55556 readline` or just `socat tcp:127.0.0.1:55556 readline` locally if you forwarded the port.
-- Consider `--temp-drive` for potentially faster runs (see caveats below).
 - When using `--forward-port` for a `127.0.0.1`-bound port on the VM, you can add a proxy in Windows like the following: `echo netsh interface portproxy add v4tov4 listenaddress=10.0.2.15 listenport=YOUR_PORT connectaddress=127.0.0.1 connectport=YOUR_PORT > c:\\port.bat & start /min c:\\port.bat & YOUR_ORIGINAL_COMMAND`
 
 ## Details
@@ -101,17 +100,15 @@ flowchart LR
     --Artifact saved: /cache/win11-step1-HASH.qcow2-->
     B2["boot-1.ps1 as Administrator"]
     --Artifact saved: /cache/win11-step2-HASH.qcow2-->
-    B2.1["Artifacts joined and compressed into /cache/win11.qcow2"]
+    B2.1["Artifacts joined and compressed into /cache/win11.qcow2 (or --drive path)"]
     -->
     B3["Ncat Agent waits for boot"]
-    --'provisioned' snapshot saved to /cache/win11.qcow2\nAll other artifacts removed-->
+    --'provisioned' snapshot saved to drive image\nAll other artifacts removed-->
     B4["Ready to run"]
   end
 
   subgraph ZB["Running"]
     C0["noVNC started on port 8000 for debugging"]
-    -->
-    C0.1["Image copied to /tmp if --temp-drive"]
     -->
     C1["QEMU snapshot restored"]
     --/tmp/qemu-status mounted as \\10.0.2.4\qemu in Windows-->
@@ -151,7 +148,6 @@ flowchart LR
       D-->E["QEMU VNC server"]
       G["QEMU Monitor"]
       K[["/cache"]]
-      K-.Image copied when using temp-drive-.->K2[["/tmp/win11.qcow2"]]
       L[["/win11-init/*.ps1"]]-.Mounted into on install.->A
       E-.Port 5950.->R["HTTP server w/ websockets proxy"]
     end
@@ -165,13 +161,9 @@ flowchart LR
   end
 ```
 
-### The `--temp-drive` flag
+### The `--drive` flag
 
-Due to [limitations](https://bugs.launchpad.net/qemu/+bug/1184089) in QEMU, even though we load a snapshot every time the image will still get written to and will therefore grow over time. Additionally in a shared-mount scenario, only one VM will be able to access this drive at the same time due to QEMU's locking.
-
-Use `--temp-drive` to create a temporary copy the image into `/tmp` in the container before running QEMU. Though the copy can be slow, this can be leveraged with docker's `--tmpfs /tmp` flag to memory-mount this drive if you have the memory for potentially added performance depending on the workload. Be careful though, these images can get big and you may run out of memory. When not using tmpfs, docker will just use your hard drive as temporary storage and the discard the modified image at the end.
-
-*Note*: Using `--temp-drive` and `--new-snapshot` together will not update the base image unless you mount `/tmp` elsewhere and copy the drive image file back as part of another workflow.
+Due to [limitations](https://bugs.launchpad.net/qemu/+bug/1184089) in QEMU, even though we load a snapshot every time the image will still get written to and will therefore grow over time. Additionally in a shared-mount scenario, only one VM will be able to access this drive at the same time due to QEMU's locking. One workaround is to copy your drive image to another temporary directory (perhaps even a tmpfs mount) and then use this `--drive` flag to reference it.
 
 ### The `--new-snapshot` and `--use-snapshot` flags
 

@@ -16,7 +16,7 @@ usage() {
     "\n" \
     "Run\n" \
     "  -f --forward-port <port>: Passes through a port to the VM (ex: 3389)\n" \
-    "  -t --temp-drive: Copies drive to /tmp before running, then discards (use with a tmpfs mount)\n" \
+    "  -d --drive <path>: Use the specified drive image (default: /cache/win11.qcow2)\n" \
     "  -p --pause: Do not close the VM after the command finishes\n" \
     "  -n --new-snapshot <name>: Generate a new snapshot after the command finishes\n" \
     "  -s --use-snapshot <name>: Restore from the specified snapshot (default: $USE_SNAPSHOT_NAME)\n" \
@@ -26,14 +26,14 @@ usage() {
 }; [ $# -eq 0 ] && usage
 
 VERBOSE=false; PAUSE=false; KEEP_INSTALL_FILES=false; NEW_SNAPSHOT_NAME=""; USE_SNAPSHOT_NAME="provisioned"
-TEMP_DRIVE=false; FORWARD_PORTS="5454"
-params="$(getopt -o "vhtpkn:s:f:" -l verbose,help,pause,keep,new-snapshot,use-snapshot,temp-drive,forward-port -n "osrun" -- "$@")"
+FORWARD_PORTS="5454"; DRIVE_PATH="/cache/win11.qcow2"
+params="$(getopt -o "vhpkn:s:f:d:" -l verbose,help,pause,keep,new-snapshot:,use-snapshot:,drive:,forward-port: -n "osrun" -- "$@")"
 eval set -- "$params"
 while true; do case "$1" in
   -k|--keep) KEEP_INSTALL_FILES=true; shift ;;
   -v|--verbose) VERBOSE=true; shift ;;
   -p|--pause) PAUSE=true; shift ;;
-  -t|--temp-drive) TEMP_DRIVE=true; shift ;;
+  -d|--drive) DRIVE_PATH="$2"; shift 2 ;;
   -n|--new-snapshot) NEW_SNAPSHOT_NAME="$2"; shift 2 ;;
   -s|--use-snapshot) USE_SNAPSHOT_NAME="$2"; shift 2 ;;
   -f|--forward-port) FORWARD_PORTS="$FORWARD_PORTS $2"; shift 2 ;;
@@ -185,12 +185,12 @@ provision_win11() {
     PREV_STEP_HASH="$STEP_HASH"
   done
 
-  trap 'echo -e "\033[31;49mRemoving /cache/win11.qcow2\033[0m" ; rm -f /cache/win11.qcow2 ; exit 1' SIGINT SIGTERM
+  trap 'echo -e "\033[31;49mRemoving $DRIVE_PATH\033[0m" ; rm -f "$DRIVE_PATH" ; exit 1' SIGINT SIGTERM
   echo -e "\033[32;32mCombining artifacts and compressing image\033[0m"
-  qemu-img convert -f qcow2 -O qcow2 -c -o compression_type=zstd,extended_l2=on,cluster_size=128k "$PREV_STEP_ARTIFACT" /cache/win11.qcow2
+  qemu-img convert -f qcow2 -O qcow2 -c -o compression_type=zstd,extended_l2=on,cluster_size=128k "$PREV_STEP_ARTIFACT" "$DRIVE_PATH"
 
   echo -e "\033[32;32;1mCreating VM snapshot\033[0m"
-  start_qemu -m "$RUN_MEMORY_GB" -v /cache/win11.qcow2 -f
+  start_qemu -m "$RUN_MEMORY_GB" -v "$DRIVE_PATH" -f
 
   echo -e "\033[32;32mWaiting for VM to boot and login one last time\033[0m"
   timeout 600 sh -c 'while ! ncat -z 127.0.0.1 5454 2>/dev/null; do sleep 1; done' \
@@ -228,21 +228,15 @@ if [ -e /cache/not-forwarded ]; then
     "recommended! Forward this path to the local machine, ex: \`-v \$(pwd)/cache:/cache\`\033[0m" > /dev/stderr
 fi
 
-if [ ! -e /cache/win11.qcow2 ]; then
+if [ ! -e "$DRIVE_PATH" ]; then
   echo -e "\033[32;49;1mWindows 11 disk image is missing, going to install it now\033[0m"
   provision_win11
 fi
 
 $VERBOSE && echo -e "\033[32;49;1mRunning \`${RUN_COMMAND//\\/\\\\}\` (Output redirected here, noVNC at http://localhost:8000/vnc.html, use --pause to not exit)\033[0m\033[0m"
-DRIVE_PATH="/cache/win11.qcow2"
-if $TEMP_DRIVE; then
-  $VERBOSE && echo -e "\033[32;49mCreating temp drive\033[0m"
-  cp /cache/win11.qcow2 /tmp/win11.qcow2
-  DRIVE_PATH="/tmp/win11.qcow2"
-fi
 
 # We use the "provisioned" (by default) snapshot stored in the qcow2 file to avoid having to wait for Windows to boot.
-$VERBOSE && echo -e "\033[32;49mRestoring snapshot '$USE_SNAPSHOT_NAME'\033[0m"
+$VERBOSE && echo -e "\033[32;49mRestoring snapshot '$USE_SNAPSHOT_NAME' from '$DRIVE_PATH' \033[0m"
 start_qemu -m "$RUN_MEMORY_GB" -o "-loadvm $USE_SNAPSHOT_NAME" -v "$DRIVE_PATH"
 $VERBOSE && echo -e "\033[32;49mWaiting for agent to respond\033[0m"
 timeout 30 sh -c 'while ! ncat -z 127.0.0.1 5454 2>/dev/null; do sleep 0.2; done' \
