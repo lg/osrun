@@ -219,9 +219,11 @@ provision_win11() {
 mkdir -p /tmp/qemu-status
 touch /tmp/qemu-status/status.txt
 tail -f /tmp/qemu-status/status.txt &
+TAIL_PID=$!
 
 # Start the novnc webserver (basically just an http server and a websocket proxy to qemu's vnc websocket)
 novnc_server --listen 8000 --vnc 127.0.0.1:5950 > /dev/null 2>&1 &
+NOVNC_PID=$!
 
 if [ -e /cache/not-forwarded ]; then
   echo -e "\033[33;49mWARNING: /cache is not mounted. Windows will need to be rebuilt every time. This is not" \
@@ -281,4 +283,5 @@ if [ "$NEW_SNAPSHOT_NAME" != "" ]; then
   fi
 fi
 
-# for faster docker shutdown, intentionally not cleaning up: qemu and the /tmp/qemu-status files
+# for faster docker shutdown, intentionally not cleaning up /tmp files
+kill -TERM $TAIL_PID $NOVNC_PID "$QEMU_PID" >/dev/null 2>&1 || true
