@@ -45,7 +45,7 @@ RUN_COMMAND="$*"
 
 # Windows 11 from May 2023 from https://uupdump.net and as backup https://uup.rg-adguard.net
 UUPS_URL=${UUPS_URL:-"http://uupdump.net/get.php?id=3a34d712-ee6f-46fa-991a-e7d9520c16fc&pack=en-us&edition=professional&aria2=2;https://uup.rg-adguard.net/api/GetFiles?id=3a34d712-ee6f-46fa-991a-e7d9520c16fc&lang=en-us&edition=professional&txt=yes"}
-UUPDUMP_CONVERT_SCRIPT_URL=${UUPDUMP_CONVERT_SCRIPT_URL:-"https://github.com/uup-dump/converter/raw/073071a0003a755233c2fa74c7b6173cd7075ed7/convert.sh"}
+UUPDUMP_CONVERT_SCRIPT_URL=${UUPDUMP_CONVERT_SCRIPT_URL:-"https://git.uupdump.net/uup-dump/converter/raw/commit/7b507c6c99afcf4cff59adcdf51cdb75159bd548/convert.sh"}
 
 INSTALL_MEMORY_GB=${INSTALL_MEMORY_GB:-8}
 RUN_MEMORY_GB=${RUN_MEMORY_GB:-4}
