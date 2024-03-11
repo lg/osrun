@@ -1,5 +1,5 @@
 #!/bin/ash
-#shellcheck shell=dash disable=SC3036,SC3048,SC2002,SC3060,SC3001
+#shellcheck shell=dash disable=SC3036,SC3048,SC2002,SC3060,SC3001,SC3061
 set -o errexit -o noclobber -o nounset -o pipefail
 
 # Parse commandline arguments
