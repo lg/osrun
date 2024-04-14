@@ -19,7 +19,7 @@ usage() {
     "  -d --drive <path>: Use the specified drive image (default: /cache/win11.qcow2)\n" \
     "  -p --pause: Do not close the VM after the command finishes\n" \
     "  -n --new-snapshot <name>: Generate a new snapshot after the command finishes\n" \
-    "  -s --use-snapshot <name>: Restore from the specified snapshot (default: $USE_SNAPSHOT_NAME)\n" \
+    "  -s --use-snapshot <name>: Restore from the specified snapshot (default: provisioned)\n" \
     1>&2
 
   exit 1
